@@ -808,8 +808,18 @@ window.lumaBack = () => {
   if (stack.length) return back();
   if (!document.activeElement?.closest?.('#rail')) { focusRail(); return true; }   // первое «Назад» — в левое меню (быстрый путь наверх)
   if (route.name !== 'home') { topLevel('home'); return true; }
-  return false;
+  exitDlg(); return true;   // выход из приложения только после подтверждения (защита от случайных нажатий «Назад»)
 };
+function exitDlg() {
+  dlg(`<div class="xlogo">${LOGO}</div><h3>Выйти из Luma?</h3><p class="sub">Приложение закроется, вы вернётесь на экран ТВ</p>
+    <div class="xbtns"><button class="btn f" tabindex="-1" data-exit="stay" data-k="ex:n">Нет, остаться</button><button class="btn f" tabindex="-1" data-exit="yes" data-k="ex:y">Да, выйти</button></div>`);
+  $('#modal .dlg')?.classList.add('exitdlg');
+  $('[data-exit=stay]')?.focus({ preventScroll: true });   // по умолчанию «остаться»: случайное OK ничего не закроет, «Назад» в окне тоже оставляет приложение
+}
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('.f'); if (!el || !el.dataset.exit) return;
+  closeDlg(); if (el.dataset.exit === 'yes') NATIVE?.exit();
+});
 
 /* ================= действия ================= */
 document.addEventListener('click', async (e) => {

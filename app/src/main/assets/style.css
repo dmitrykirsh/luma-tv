@@ -523,3 +523,11 @@ body.nopclk .pclk{display:none}
 .pclk-a{display:none;z-index:200}
 body.pclk-always.np .pclk-a, body.pclk-always:has(#tvp:not(.hidden)) .pclk-a{display:block}
 body.pclk-always .np-osd .pclk, body.pclk-always #tvOsd .pclk{display:none}
+
+/* окно подтверждения выхода: компактная карточка по центру, крупные кнопки */
+.dlg.exitdlg{width:820px;padding:48px 56px 52px;text-align:center;border-radius:36px;box-shadow:0 30px 90px rgba(0,0,0,.6),0 0 0 1px rgba(248,249,250,.07)}
+.exitdlg .xlogo svg{width:84px;height:84px;filter:drop-shadow(0 0 26px rgba(255,51,102,.55))}
+.exitdlg h3{font:700 40px var(--display);margin:22px 0 12px}
+.exitdlg p.sub{font-size:26px;margin:0}
+.exitdlg .xbtns{display:flex;gap:22px;margin-top:40px}
+.exitdlg .xbtns .btn{flex:1;height:88px;justify-content:center;border-radius:24px;font-size:29px}

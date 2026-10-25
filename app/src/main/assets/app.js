@@ -149,8 +149,8 @@ function cardHTML(it, key, opt = {}) {
   const r = rate(it);
   const pct = opt.pct || 0;
   const sub = opt.sub || [it.year, TYPES[it.type]].filter(Boolean).join(' · ');
-  return `<div class="card f" tabindex="-1" data-k="${esc(key)}" data-id="${it.id}" data-poster="${esc(it.poster || '')}">
-    <div class="poster">${it.poster ? `<img decoding="async" src="${esc(it.poster)}" alt="">` : ''}<div class="ph">${esc(it.name)}</div>
+  return `<div class="card f" tabindex="-1" data-k="${esc(key)}" data-id="${it.id}" data-poster="${esc(posterOf(it))}" data-alt="${esc(it.alt || '')}">
+    <div class="poster">${posterOf(it) ? `<img decoding="async" src="${esc(posterOf(it))}" alt="">` : ''}<div class="ph">${esc(it.name)}</div>
     ${it.quality ? `<span class="q">${esc(it.quality)}</span>` : ''}${r ? `<span class="rt">${r.toFixed(1)}</span>` : ''}${pct ? `<i class="pb" style="width:${pct}%"></i>` : ''}</div>
     <div class="t">${esc(it.name)}</div>${opt.orig && it.origin_name && String(it.origin_name).trim().toLowerCase() !== String(it.name).trim().toLowerCase() ? `<div class="o">${esc(it.origin_name)}</div>` : ''}<div class="s">${esc(sub)}</div></div>`;
 }
@@ -194,10 +194,41 @@ function fillRail(id, items, opt = {}) {
   sec.querySelector('.track').innerHTML = items.map((it, i) => cardHTML(it, id + ':' + it.id, opt.each ? opt.each(it) : {})).join('');
   hookImages(sec);
 }
+/* Постер из каталога иногда мёртв (у свежих фильмов картинку ещё не подготовили, сервер отвечает 404). Тогда берём постер со страницы фильма, а если и там нет, из TMDB. Найденный запоминаем. */
+let posterFix = {}; try { posterFix = JSON.parse(localStorage.getItem('luma.tv.pfix') || '{}'); } catch {}
+const posterOf = (it) => posterFix[it.id] || it.poster || '';
+const pfTried = new Set();
+const imgOk = (u) => (u ? new Promise((res) => { const im = new Image(); im.onload = () => res(true); im.onerror = () => res(false); im.src = u; setTimeout(() => res(false), 8000); }) : Promise.resolve(false));
+async function findPoster(id, name, year, bad) {
+  try { const d = await info(+id); if (d.poster && d.poster !== bad && (await imgOk(d.poster))) return d.poster; } catch {}
+  try {
+    const j = await tmdb('/search/multi', { query: name, include_adult: 'false' });
+    const list = (j.results || []).filter((r) => (r.media_type === 'movie' || r.media_type === 'tv') && r.poster_path);
+    const r = list.find((x) => String((x.release_date || x.first_air_date || '').slice(0, 4)) === String(year)) || list[0];
+    if (r) return TMI(r.poster_path, 'w342');
+  } catch {}
+  return '';
+}
+async function fixPoster(img) {
+  const card = img.closest('.card'), id = card && card.dataset.id;
+  if (!id || pfTried.has(id)) { img.remove(); return; }
+  pfTried.add(id);
+  const name = ($('.t', card) || {}).textContent || '', year = ((($('.s', card) || {}).textContent || '').match(/\d{4}/) || [])[0];
+  const url = card.dataset.alt ? TMI(card.dataset.alt, 'w342') : await findPoster(id, name, year, img.currentSrc || img.src);
+  if (!url) { img.remove(); return; }
+  posterFix[id] = url; try { localStorage.setItem('luma.tv.pfix', JSON.stringify(posterFix)); } catch {}
+  $$(`.card[data-id="${id}"]`).forEach((c) => {
+    c.dataset.poster = url;
+    const box = $('.poster', c); if (!box) return;
+    let im = $('img', box); if (!im) { im = document.createElement('img'); im.decoding = 'async'; im.alt = ''; box.insertBefore(im, box.firstChild); }
+    im.onload = () => im.classList.add('ok'); im.onerror = () => im.remove(); im.src = url;
+  });
+  feedPublish();
+}
 function hookImages(root) {
   $$('.poster img', root).forEach((img) => {
     const done = () => img.classList.add('ok');
-    if (img.complete && img.naturalWidth) done(); else { img.onload = done; img.onerror = () => img.remove(); }
+    if (img.complete && img.naturalWidth) done(); else { img.onload = done; img.onerror = () => fixPoster(img); }
   });
 }
 
@@ -294,7 +325,7 @@ async function tmRow(path, params, kind) {
 async function tmRowFetch(path, params, kind) {
   const j = await tmdb(path, params || {});
   const res = (j.results || []).slice(0, 20);
-  const out = await Promise.all(res.map(async (t) => { const it = await tmMatchCached(t, kind); return it ? { it, bd: t.backdrop_path || '', overview: t.overview || '', genres: (t.genre_ids || []).map((g) => TM_GENRES[g]).filter(Boolean), kind } : null; }));
+  const out = await Promise.all(res.map(async (t) => { const it = await tmMatchCached(t, kind); return it ? { it: { ...it, alt: t.poster_path || '' }, bd: t.backdrop_path || '', overview: t.overview || '', genres: (t.genre_ids || []).map((g) => TM_GENRES[g]).filter(Boolean), kind } : null; }));
   return out.filter(Boolean);
 }
 
@@ -328,7 +359,7 @@ function heroSwitch(k, byUser) {
   if (byUser) $(`.htab[data-htab="${k}"]`)?.focus({ preventScroll: true });
 }
 /* ---------- лента для лаунчера: история с прогрессом, избранное и подборка баннера уходят в файл, лаунчер читает его через ContentProvider ---------- */
-const feedCard = (it) => ({ id: it.id, type: it.type, name: it.name, year: it.year, poster: it.poster || '', rating: +rate(it).toFixed(1) });
+const feedCard = (it) => ({ id: it.id, type: it.type, name: it.name, year: it.year, poster: posterOf(it), rating: +rate(it).toFixed(1) });
 // разделы главной (тренды TMDB и ряды каталога): запоминаем, чтобы лаунчер показывал их и когда Luma закрыта
 let feedSecs = {}; try { feedSecs = JSON.parse(localStorage.getItem('luma.tv.fsec') || '{}'); } catch {}
 // бэкдропы для тех, у кого их нет (история, ряды каталога): {id: {b, o, g}} или 0, если не нашлось
@@ -441,7 +472,7 @@ async function renderHome(_, t) {
       try {
         const j = await tmdb('/trending/movie/week', {});
         const picks = (j.results || []).filter((x) => x.backdrop_path).slice(0, 9);
-        const got = (await Promise.all(picks.map(async (x) => { const it = await tmMatchCached(x, 'movie'); return it ? { it, bd: x.backdrop_path, overview: x.overview || '', genres: (x.genre_ids || []).map((g) => TM_GENRES[g]).filter(Boolean) } : null; }))).filter(Boolean).slice(0, 6);
+        const got = (await Promise.all(picks.map(async (x) => { const it = await tmMatchCached(x, 'movie'); return it ? { it: { ...it, alt: x.poster_path || '' }, bd: x.backdrop_path, overview: x.overview || '', genres: (x.genre_ids || []).map((g) => TM_GENRES[g]).filter(Boolean) } : null; }))).filter(Boolean).slice(0, 6);
         if (got.length >= 3) return got;
       } catch {}
     }
@@ -573,7 +604,7 @@ async function renderDetails(r, t) {
   const kp = Number(d.kp_rating) || 0, im = Number(d.imdb_rating) || 0;
   det = { d, seasons, serial, s0, e0 };
   const watch = rsm || (serial && last) ? 'Продолжить' + (serial ? ` · С${s0} Э${e0}` : '') : 'Смотреть';
-  view.innerHTML = `<div class="page"><div class="dbg" id="dbg"></div><div class="dshade"></div><div class="det"><div class="dp"><img src="${esc(d.poster)}" alt=""></div><div class="di">
+  view.innerHTML = `<div class="page"><div class="dbg" id="dbg"></div><div class="dshade"></div><div class="det"><div class="dp"><img src="${esc(posterOf(d))}" alt="" onerror="detPoster(this)"></div><div class="di">
     <div class="ty">${esc(TYPES[d.type] || '')}${inf.age ? ' · ' + esc(inf.age) + '+' : ''}</div>
     <h1>${esc(d.name)}</h1><div class="orig">${esc(d.origin_name || inf.name_eng || '')}</div>
     <div class="meta"><span>${d.year || ''}</span>${inf.time ? `<span>•</span><span>${esc(inf.time)}</span>` : ''}${serial ? `<span>•</span><span>${seasons.length} сез.</span>` : ''}

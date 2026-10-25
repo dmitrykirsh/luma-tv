@@ -133,7 +133,7 @@ async function renderDetails2(r, t) {
   tabs.push(['trailers', 'Трейлеры']);
   if ((people.actors || []).length || (people.directors || []).length) tabs.push(['cast', 'Актёры']);
   tabs.push(['more', 'Похожее']);
-  view.innerHTML = `<div class="page"><div class="dbg" id="dbg"></div><div class="dshade"></div><div class="det"><div class="dp"><img src="${esc(d.poster)}" alt=""></div><div class="di">
+  view.innerHTML = `<div class="page"><div class="dbg" id="dbg"></div><div class="dshade"></div><div class="det"><div class="dp"><img src="${esc(posterOf(d))}" alt="" onerror="detPoster(this)"></div><div class="di">
     <div class="ty">${esc(TYPES[d.type] || '')}${inf.age ? ' · ' + esc(inf.age) + '+' : ''}</div>
     <h1 id="dTitle">${esc(d.name)}</h1><div class="orig">${esc(d.origin_name || inf.name_eng || '')}</div>
     <div class="meta"><span>${d.year || ''}</span>${inf.time ? `<span>•</span><span>${esc(inf.time)}</span>` : ''}${serial ? `<span>•</span><span>${seasons.length} сез.</span>` : ''}
@@ -266,3 +266,10 @@ document.addEventListener('focusin', (e) => {
   if (el.dataset.dtab) clearTimeout(tabT);
 });
 window.RENDER.details = renderDetails2;
+
+// постер на странице фильма не загрузился: запасной (страница фильма, затем TMDB)
+window.detPoster = async (img) => {
+  img.onerror = null; if (!DX || !DX.d) return;
+  const d = DX.d, url = await findPoster(d.id, d.name, d.year, img.src);
+  if (url && DX && DX.d === d) { posterFix[d.id] = url; try { localStorage.setItem('luma.tv.pfix', JSON.stringify(posterFix)); } catch {} img.src = url; feedPublish(); }
+};

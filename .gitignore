@@ -1,0 +1,13 @@
+build/
+.gradle/
+local.properties
+*.jks
+*.keystore
+keystore.properties
+*.jks
+dist/
+
+# служебные файлы и логи проверок
+i.mp4
+isheet.png
+y*.txt

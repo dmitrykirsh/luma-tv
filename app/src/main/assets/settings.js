@@ -105,11 +105,11 @@ window.lumaFilePicked = async (json) => {
 };
 
 /* ---------- экран ---------- */
-const ST_SECTIONS = [['sync', 'Синхронизация', 'sync', 'ПК и телефон'], ['keys', 'Сервисы и ключи', 'key', 'TMDB, OMDb, Trakt, MDBList'], ['channels', 'Каналы', 'live', 'Плейлисты'], ['look', 'Оформление', 'film', 'Заставка и фон'], ['data', 'Данные', 'trash', 'История и кэш'], ['upd', 'Обновления', 'refresh', 'Версия приложения'], ['about', 'О приложении', 'info', 'Luma TV']];
+const ST_SECTIONS = [['sync', 'Google-аккаунт', 'sync', 'Не подключено'], ['lan', 'Wi-Fi сеть', 'tv', 'ПК и телефон'], ['keys', 'Сервисы и ключи', 'key', 'TMDB, OMDb, Trakt, MDBList'], ['channels', 'Каналы', 'live', 'Плейлисты'], ['look', 'Оформление', 'film', 'Заставка и фон'], ['data', 'Данные', 'trash', 'История и кэш'], ['upd', 'Обновления', 'refresh', 'Версия приложения'], ['about', 'О приложении', 'info', 'Luma TV']];
 let stCur = 'sync';
 function renderSettings3(r, t) {
   stCur = r.sec || stCur || 'sync';
-  view.innerHTML = `<div class="page"><div class="st"><nav class="st-nav">${ST_SECTIONS.map(([k, l, ic, sub]) => `<button class="st-it f ${k === stCur ? 'on' : ''}" tabindex="-1" data-st="${k}" data-k="st:${k}"><span class="sti">${ico(ic)}</span><span><b>${l}</b><small>${sub}</small></span></button>`).join('')}</nav><div class="st-pane" id="stPane"></div></div></div>`;
+  view.innerHTML = `<div class="page"><div class="st"><nav class="st-nav">${ST_SECTIONS.map(([k, l, ic, sub]) => `<button class="st-it f ${k === stCur ? 'on' : ''}" tabindex="-1" data-st="${k}" data-k="st:${k}"><span class="sti">${ico(ic)}</span><span><b>${l}</b><small>${k === 'sync' ? driveNavSub() : sub}</small></span></button>`).join('')}</nav><div class="st-pane" id="stPane"></div></div></div>`;
   paintPane();
   ($(`[data-st=${stCur}]`) || $('.st-it'))?.focus({ preventScroll: true });
 }
@@ -121,7 +121,9 @@ function paintPane() {
   $$('.st-it').forEach((b) => b.classList.toggle('on', b.dataset.st === stCur));
   const card = (ic, title, text) => `<div class="sc hero"><div class="sci">${ico(ic)}</div><div><b>${title}</b><p>${text}</p></div></div>`;
   if (stCur === 'sync') {
-    p.innerHTML = card('sync', 'Компьютер и телефон', 'Luma на ПК и ТВ в одной сети обменяются избранным, историей, прогрессом, подборками, каналами и ключами. Без облака и аккаунтов.') +
+    p.innerHTML = driveRowsHtml();
+  } else if (stCur === 'lan') {
+    p.innerHTML = card('tv', 'Синхронизация по Wi-Fi', 'Без аккаунта: Luma на ПК, телефоне и ТВ в одной сети обмениваются данными сами. Подключить устройство нужно один раз.') +
       `<button class="srow f" tabindex="-1" data-sact="sync" data-k="s:sync"><span class="sri">${ico('tv')}</span><span><b>Найти компьютер в сети</b><small>Или откройте на ПК Настройки → Телевизор и найдите этот ТВ</small></span><i>›</i></button>
        <button class="srow f" tabindex="-1" data-sact="phone" data-k="s:phone"><span class="sri">${ico('search')}</span><span><b>Принять файл с телефона</b><small>Показать QR-код для резервной копии (.luma)</small></span><i>›</i></button>
        <div class="smeta">Последняя синхронизация: ${esc(lastSyncText())}</div>`;

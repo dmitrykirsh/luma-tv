@@ -38,6 +38,7 @@ class MainActivity : Activity() {
     private lateinit var rootLayout: FrameLayout
     private lateinit var np: NativePlayer
     private lateinit var syncNet: SyncNet
+    private lateinit var driveSync: DriveSync
     private var syncSrv: ImportServer? = null
     private var pendingLink = ""   // «id,play» из luma://open, пока страница не загрузилась
 
@@ -128,6 +129,7 @@ class MainActivity : Activity() {
         setContentView(rootLayout)
         np = NativePlayer(this, rootLayout) { code -> js(code) }
         syncNet = SyncNet { code -> js(code) }
+        driveSync = DriveSync(this) { code -> js(code) }
         web.visibility = android.view.View.INVISIBLE
         web.postDelayed({ web.visibility = android.view.View.VISIBLE }, 4000)   // на случай, если страница не загрузится
         web.requestFocus()
@@ -247,6 +249,7 @@ class MainActivity : Activity() {
             if (srv == null) {
                 srv = ImportServer({}, {})
                 srv.onSyncIn = { plain -> js("window.lumaSyncIn && window.lumaSyncIn(" + JSONObject.quote(plain) + ")") }
+                srv.onGoogleOffer = { secret, from -> if (driveSync.state().contains("\"connected\":true") || !Regex("^(desktop|tv):.+$").matches(secret)) false else { js("window.lumaDriveOffer && window.lumaDriveOffer(" + JSONObject.quote(JSONObject().put("secret", secret).put("from", from).toString()) + ")"); true } }
                 try { val port = srv.start(); syncSrv = srv; srv.deviceName = name; syncNet.startResponder(name, port) } catch (_: Exception) { return "{\"error\":\"PORT\"}" }
             }
             srv.deviceName = name; srv.groupId = gid; srv.groupKey = gkey; srv.syncExport = exportJson
@@ -258,6 +261,16 @@ class MainActivity : Activity() {
         @JavascriptInterface fun syncScan() { syncNet.scan() }
         @JavascriptInterface fun syncSend(ip: String, port: Int, code: String, exportJson: String) { syncNet.send(ip, port, code, exportJson) }
         @JavascriptInterface fun syncAuto(gkey: String, exportJson: String) { syncNet.autoAsync(gkey, exportJson) }
+        @JavascriptInterface fun driveState(): String = driveSync.state()
+        @JavascriptInterface fun driveConnect() { driveSync.connectAsync() }
+        @JavascriptInterface fun driveConnectBrowser() { driveSync.connectBrowserAsync() }
+        @JavascriptInterface fun driveDeleteRemote() { driveSync.deleteRemoteAsync() }
+        @JavascriptInterface fun driveSecret(): String = driveSync.secret()
+        @JavascriptInterface fun driveAdopt(v: String): Boolean = driveSync.adopt(v)
+        @JavascriptInterface fun driveConnectCancel() { driveSync.cancelConnect() }
+        @JavascriptInterface fun driveDisconnect() { driveSync.disconnect() }
+        @JavascriptInterface fun driveFetchRemote() { driveSync.fetchRemoteAsync() }
+        @JavascriptInterface fun driveUpload(exportJson: String) { driveSync.uploadAsync(exportJson) }
 
         // выбор файла плейлиста через системный выбор файлов
         @JavascriptInterface fun pickFile() {

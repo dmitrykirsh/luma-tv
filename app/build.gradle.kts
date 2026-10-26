@@ -15,8 +15,8 @@ android {
         applicationId = "ws.luma.tv"
         minSdk = 24
         targetSdk = 34
-        versionCode = 127
-        versionName = "1.0.27"
+        versionCode = 128
+        versionName = "1.0.28"
     }
     signingConfigs {
         if (ksProps.containsKey("storeFile")) create("release") {

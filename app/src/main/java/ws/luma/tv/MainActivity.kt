@@ -242,7 +242,7 @@ class MainActivity : Activity() {
         // синхронизация между устройствами: приём всегда включён, обмен по ключу группы, код нужен только для первого подключения
         @JavascriptInterface fun syncServe(gid: String, gkey: String, did: String, exportJson: String): String {
             val name = try { android.provider.Settings.Global.getString(contentResolver, "device_name") } catch (_: Exception) { null } ?: android.os.Build.MODEL
-            syncNet.gid = gid; syncNet.did = did
+            syncNet.gid = gid; syncNet.did = did; syncNet.name = name
             var srv = syncSrv
             if (srv == null) {
                 srv = ImportServer({}, {})

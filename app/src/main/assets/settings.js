@@ -178,6 +178,6 @@ document.addEventListener('click', (e) => {
   else if (a === 'pllink') addPlaylistDlg();
   else if (a === 'plfile') pickPlaylistFile();
   else if (a === 'plphone') go('plimport');
-  else if (a === 'clearhist') confirmDlg('Очистить историю и место просмотра?', 'Очистить', () => { S.history = []; S.progress = {}; save(); toast('История очищена'); refreshHere('d:hist'); });
+  else if (a === 'clearhist') confirmDlg('Очистить историю и место просмотра?', 'Очистить', () => { S.history.forEach((h) => goneMark('h', h.id)); S.history = []; S.progress = {}; save(); toast('История очищена'); refreshHere('d:hist'); });
   else if (a === 'clearcache') { for (const k of ['luma.tv.ch2', 'luma.tv.epg', 'luma.tv.rows', 'luma.tv.m', 'luma.tv.lm', 'luma.tv.lb', 'luma.tv.omdb']) { try { localStorage.removeItem(k); } catch {} } tmFindCache.clear(); tmRows = {}; TVD.channels = []; toast('Кэш очищен'); }
 });

@@ -117,6 +117,7 @@ function npClose(silent) {
   if (!NP.on) return;
   try { if (NP.st.d > 120) storeProgress(NP.key, NP.st.p / 1000, NP.st.d / 1000); } catch {}
   NP.on = false; NP.token++; clearTimeout(NP.osdT); clearTimeout(NP.ctlT);
+  try { if (window.syncAfterPlay) syncAfterPlay(); } catch {}
   try { NATIVE.npStop(); } catch {}
   document.body.classList.remove('np');
   $('#np')?.classList.add('hidden'); closeNpMenu(true);

@@ -45,11 +45,11 @@ document.addEventListener('click', async (e) => {
     const { id, key } = window.__cm || {}; const cm = el.dataset.cm;
     closeDlg();
     if (cm === 'fav') {
-      if (isFav(id)) { S.favs = S.favs.filter((f) => f.id !== id); toast('Убрано из избранного'); }
-      else { let it = S.history.find((h) => h.id === id) || S.favs.find((f) => f.id === id); if (!it) { try { it = brief(await info(id)); } catch {} } if (it) { S.favs.unshift(brief(it)); toast('Добавлено в избранное'); } }
+      if (isFav(id)) { S.favs = S.favs.filter((f) => f.id !== id); goneMark('f', id); toast('Убрано из избранного'); }
+      else { let it = S.history.find((h) => h.id === id) || S.favs.find((f) => f.id === id); if (!it) { try { it = brief(await info(id)); } catch {} } if (it) { S.favs.unshift({ ...brief(it), at: Date.now() }); toast('Добавлено в избранное'); } }
       save();
     } else if (cm === 'hist') {
-      S.history = S.history.filter((h) => h.id !== id);
+      S.history = S.history.filter((h) => h.id !== id); goneMark('h', id);
       for (const k of Object.keys(S.progress)) if (k === String(id) || k.startsWith(id + ':')) delete S.progress[k];
       save(); toast('Убрано из истории');
     } else if (cm === 'chfav') { const on = tvToggleFav(id); toast(on ? 'Канал в избранном' : 'Убрано из избранного'); }

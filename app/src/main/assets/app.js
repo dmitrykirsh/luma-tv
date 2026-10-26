@@ -57,7 +57,7 @@ const LS = 'luma.tv';
 let S = { favs: [], history: [], progress: {}, seen: {}, secrets: {}, extra: {} };
 try { S = { ...S, ...JSON.parse(localStorage.getItem(LS) || '{}') }; } catch {}
 let saveT = 0;
-const save = () => { clearTimeout(saveT); saveT = setTimeout(() => { try { localStorage.setItem(LS, JSON.stringify(S)); } catch {} feedPublish(); }, 300); };
+const save = () => { clearTimeout(saveT); saveT = setTimeout(() => { try { localStorage.setItem(LS, JSON.stringify(S)); } catch {} try { if (S.group && NATIVE && NATIVE.syncUpdate) NATIVE.syncUpdate(exportJson()); } catch {} feedPublish(); }, 300); };
 const uniq = (list, key) => { const m = new Map(); for (const x of list) if (x && x[key] != null && !m.has(x[key])) m.set(x[key], x); return [...m.values()]; };
 
 function mergeBackup(b) {
@@ -66,6 +66,11 @@ function mergeBackup(b) {
   const m = new Map();
   for (const x of [...(S.history || []), ...(d.history || [])]) { const o = m.get(x.id); if (!o || (x.ts || 0) > (o.ts || 0)) m.set(x.id, x); }
   S.history = [...m.values()].sort((a, b2) => (b2.ts || 0) - (a.ts || 0)).slice(0, 60);
+  S.gone = S.gone || {};
+  for (const [gk, gts] of Object.entries(d.gone || {})) if (gts > (S.gone[gk] || 0)) S.gone[gk] = gts;   // отметки об удалении: удалённое на одном устройстве не возвращается с другого
+  { const cut = Date.now() - 90 * 864e5; for (const gk of Object.keys(S.gone)) if (S.gone[gk] < cut) delete S.gone[gk]; }
+  S.favs = S.favs.filter((f) => !(S.gone['f:' + f.id] > (f.at || 0)));
+  S.history = S.history.filter((h) => !(S.gone['h:' + h.id] > (h.ts || 0)));
   S.seen = { ...(S.seen || {}) };
   for (const [k, arr] of Object.entries(d.seen || {})) S.seen[k] = [...new Set([...(S.seen[k] || []), ...arr])];
   S.progress = { ...(S.progress || {}) };
@@ -116,10 +121,11 @@ const search = async (q) => (await api('/search?q=' + encodeURIComponent(q), 600
 
 /* ================= данные пользователя ================= */
 const brief = (it) => ({ id: it.id, type: it.type, name: it.name, origin_name: it.origin_name, poster: it.poster, year: it.year, kp_rating: it.kp_rating ?? it.kp, imdb_rating: it.imdb_rating ?? it.imdb, quality: it.quality });
+const goneMark = (k, id) => { S.gone = S.gone || {}; S.gone[k + ':' + id] = Date.now(); };
 const isFav = (id) => S.favs.some((f) => f.id === id);
 function toggleFav(it) {
-  if (isFav(it.id)) { S.favs = S.favs.filter((f) => f.id !== it.id); toast('Убрано из избранного'); }
-  else { S.favs.unshift(brief(it)); toast('Добавлено в избранное'); }
+  if (isFav(it.id)) { S.favs = S.favs.filter((f) => f.id !== it.id); goneMark('f', it.id); toast('Убрано из избранного'); }
+  else { S.favs.unshift({ ...brief(it), at: Date.now() }); toast('Добавлено в избранное'); }
   save(); return isFav(it.id);
 }
 function addHistory(it, season, episode) {
@@ -780,6 +786,7 @@ function playItem(d, seasons, season, episode, opts = {}) {
   setTimeout(() => $('#plLoad').classList.add('done'), 6000);
 }
 function closePlayer() {
+  try { if (window.syncAfterPlay) syncAfterPlay(); } catch {}
   $('#player').classList.add('hidden'); $('#plPick').classList.add('hidden');
   plFrame.src = 'about:blank'; playing = null;
   if (route.name === 'details') { const k = document.activeElement?.dataset?.k; show(route, { scroll: view.scrollTop, focus: k || 'watch' }); }
@@ -901,7 +908,7 @@ document.addEventListener('click', async (e) => {
   else if (act === 'fav') { const on = toggleFav(det.d); el.classList.toggle('on', on); el.querySelector('span').textContent = on ? 'В избранном' : 'В избранное'; }
   else if (act === 'import') go('import');
   else if (act === 'impback') { stopImport(); if (!back()) topLevel('settings'); }
-  else if (act === 'clearhist') { S.history = []; S.progress = {}; save(); toast('История очищена'); }
+  else if (act === 'clearhist') { S.history.forEach((h) => goneMark('h', h.id)); S.history = []; S.progress = {}; save(); toast('История очищена'); }
 });
 
 /* ================= пульт: перемещение фокуса ================= */

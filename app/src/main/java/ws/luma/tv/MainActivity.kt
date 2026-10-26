@@ -239,19 +239,25 @@ class MainActivity : Activity() {
         @JavascriptInterface fun npAv1(): Boolean = onMain { np.av1Hw() }
         @JavascriptInterface fun npVp9(): Boolean = onMain { np.vp9Hw() }
         @JavascriptInterface fun npStop() { runOnUiThread { np.stop() } }
-        // синхронизация с компьютером
-        @JavascriptInterface fun syncStart(code: String, exportJson: String): String {
-            syncStop()
+        // синхронизация между устройствами: приём всегда включён, обмен по ключу группы, код нужен только для первого подключения
+        @JavascriptInterface fun syncServe(gid: String, gkey: String, did: String, exportJson: String): String {
             val name = try { android.provider.Settings.Global.getString(contentResolver, "device_name") } catch (_: Exception) { null } ?: android.os.Build.MODEL
-            val srv = ImportServer({}, {})
-            srv.syncCode = code; srv.syncExport = exportJson; srv.deviceName = name
-            srv.onSyncIn = { plain -> js("window.lumaSyncIn && window.lumaSyncIn(" + JSONObject.quote(plain) + ")") }
-            return try { val port = srv.start(); syncSrv = srv; syncNet.startResponder(name, port); JSONObject().put("name", name).put("port", port).toString() } catch (_: Exception) { "{\"error\":\"PORT\"}" }
+            syncNet.gid = gid; syncNet.did = did
+            var srv = syncSrv
+            if (srv == null) {
+                srv = ImportServer({}, {})
+                srv.onSyncIn = { plain -> js("window.lumaSyncIn && window.lumaSyncIn(" + JSONObject.quote(plain) + ")") }
+                try { val port = srv.start(); syncSrv = srv; srv.deviceName = name; syncNet.startResponder(name, port) } catch (_: Exception) { return "{\"error\":\"PORT\"}" }
+            }
+            srv.deviceName = name; srv.groupId = gid; srv.groupKey = gkey; srv.syncExport = exportJson
+            return JSONObject().put("name", name).put("port", srv.port).toString()
         }
+        @JavascriptInterface fun syncCode(code: String) { syncSrv?.syncCode = code.ifEmpty { null } }
         @JavascriptInterface fun syncUpdate(exportJson: String) { syncSrv?.syncExport = exportJson }
         @JavascriptInterface fun syncStop() { syncNet.stopResponder(); syncSrv?.stop(); syncSrv = null }
         @JavascriptInterface fun syncScan() { syncNet.scan() }
         @JavascriptInterface fun syncSend(ip: String, port: Int, code: String, exportJson: String) { syncNet.send(ip, port, code, exportJson) }
+        @JavascriptInterface fun syncAuto(gkey: String, exportJson: String) { syncNet.autoAsync(gkey, exportJson) }
 
         // выбор файла плейлиста через системный выбор файлов
         @JavascriptInterface fun pickFile() {

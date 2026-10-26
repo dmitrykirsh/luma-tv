@@ -531,3 +531,14 @@ body.pclk-always .np-osd .pclk, body.pclk-always #tvOsd .pclk{display:none}
 .exitdlg p.sub{font-size:26px;margin:0}
 .exitdlg .xbtns{display:flex;gap:22px;margin-top:40px}
 .exitdlg .xbtns .btn{flex:1;height:88px;justify-content:center;border-radius:24px;font-size:29px}
+
+/* субтитры в плеере ТВ: поверх видео, выше панели управления, когда она показана */
+.np-sub{position:absolute;left:9%;right:9%;bottom:84px;text-align:center;pointer-events:none;opacity:0;transition:bottom .5s var(--ease),opacity .15s;--npsz:50px}
+#np[data-sub="s"] .np-sub{--npsz:42px}#np[data-sub="l"] .np-sub{--npsz:62px}
+.np-sub.on{opacity:1}
+.np-osd:not(.hidden)~.np-sub{bottom:392px}
+.np-sub span{display:inline;padding:.06em .5em;font:600 var(--npsz)/1.55 var(--body);color:#fff;text-shadow:0 2px 3px rgba(0,0,0,.9),0 3px 20px rgba(0,0,0,.85);background:rgba(8,9,12,.5);border-radius:14px;-webkit-box-decoration-break:clone;box-decoration-break:clone}
+.npb.txt em{font-style:normal;font-weight:500;color:var(--muted);margin-left:8px}
+.npb.txt:focus em{color:rgba(255,255,255,.85)}
+.nm-h{font:600 22px var(--body);letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:22px 8px 10px}
+.npb.txt{display:flex;align-items:center;justify-content:center}

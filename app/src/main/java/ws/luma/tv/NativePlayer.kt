@@ -46,8 +46,7 @@ class NativePlayer(private val activity: Activity, private val root: FrameLayout
             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
             setShutterBackgroundColor(Color.BLACK)
             setKeepContentOnPlayerReset(false)
-            subtitleView?.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
-            subtitleView?.setBottomPaddingFraction(0.12f)
+            subtitleView?.visibility = android.view.View.GONE   // субтитры рисует веб-интерфейс (npCue): так они совпадают с остальным оформлением
             layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         }
         root.addView(v, 0)
@@ -101,6 +100,11 @@ class NativePlayer(private val activity: Activity, private val root: FrameLayout
                     return
                 }
                 js("window.npEvent && window.npEvent('error'," + JSONObject.quote(e.errorCodeName) + ")")
+            }
+            override fun onCues(cueGroup: androidx.media3.common.text.CueGroup) {
+                if (myGen != gen) return
+                val t = cueGroup.cues.mapNotNull { it.text?.toString()?.trim()?.takeIf { x -> x.isNotEmpty() } }.joinToString("\n")
+                js("window.npCue && window.npCue(" + JSONObject.quote(t) + ")")
             }
             override fun onTracksChanged(tracks: Tracks) { if (myGen == gen) js("window.npEvent && window.npEvent('tracks')") }
         })

@@ -202,7 +202,27 @@ function npEnsureDom() {
     <div class="np-skip hidden"><button class="btn primary f" tabindex="-1" data-np="skip" data-k="npskip"><span></span></button></div>
     <div class="np-osd hidden"><div class="pclk"></div><div class="np-title"><b></b><span></span></div>
       <div class="np-bar"><i class="pos"></i><i class="mark"></i><div class="np-thumb hidden"><div class="img"></div><span></span></div><span class="t0">0:00</span><span class="t1">0:00</span></div><div class="np-btns" id="npBtns"></div><div class="np-hint">◀ ▶ перемотка · OK пауза · ▲ меню</div></div>
-    <div class="np-menu hidden" id="npMenu"></div></div>`);
+    <div class="np-sub"></div><div class="np-menu hidden" id="npMenu"></div></div>`);
+}
+/* ---------- субтитры: рисуем сами (как в плеере Luma для ПК), размер выбирается в меню «Субтитры» ---------- */
+const NP_SUB_SIZES = [['s', 'Мелкие'], ['m', 'Обычные'], ['l', 'Крупные']];
+function npApplySubSize() { const el = $('#np'); if (el) el.dataset.sub = npPrefs().subSize || 'm'; }
+let npSubLast = null;
+window.npCue = (t) => {
+  if (t === npSubLast) return; npSubLast = t;
+  const el = $('#np .np-sub'); if (!el) return;
+  const h = esc(t || '').replace(/\r?\n/g, '<br>');
+  el.innerHTML = h ? `<span>${h}</span>` : ''; el.classList.toggle('on', !!h);
+};
+/* значения на кнопках: что сейчас выбрано (звук, субтитры, качество, скорость) */
+function npPaintChips() {
+  let tr = {}; try { tr = JSON.parse(NATIVE.npTracks()); } catch { return; }
+  const set = (a, label, val) => { const b = $(`[data-np=${a}]`); if (b) b.innerHTML = esc(label) + (val ? ` <em>${esc(val)}</em>` : ''); };
+  const aud = (tr.audio || []).find((x) => x.sel), txt = (tr.text || []).find((x) => x.sel);
+  set('audio', 'Звук', aud ? npAudioName(aud) : '');
+  set('subs', 'Субтитры', tr.textOff || !txt ? 'выкл' : String(txt.name || '').replace(/\s*-\s*\d+$/, ''));
+  set('quality', 'Качество', tr.autoVideo ? 'авто' + (NP.st.vh ? ' · ' + NP.st.vh + 'p' : '') : (NP.st.vh ? NP.st.vh + 'p' : ''));
+  set('speed', 'Скорость', Math.abs((tr.speed || 1) - 1) < 0.01 ? '' : (tr.speed || 1) + '×');
 }
 function renderNpButtons() {
   const ep = !!NP.season;
@@ -218,8 +238,8 @@ function renderNpButtons() {
     <button class="npb txt f" tabindex="-1" data-np="quality" data-k="npb:q">Качество</button>
     <button class="npb txt f" tabindex="-1" data-np="speed" data-k="npb:sp">Скорость</button>`;
 }
-function npShow() { $('#np').classList.remove('hidden'); document.body.classList.add('np'); }
-function npOsd(ms = 4000) { tick();
+function npShow() { $('#np').classList.remove('hidden'); document.body.classList.add('np'); npApplySubSize(); npSubLast = null; window.npCue(''); }
+function npOsd(ms = 4000) { tick(); npPaintChips();
   const o = $('#np .np-osd'); if (!o) return;
   o.classList.remove('hidden'); clearTimeout(NP.osdT);
   NP.osdT = setTimeout(() => { if (NP.mode === 'play' && !NP.menu) o.classList.add('hidden'); }, ms);
@@ -255,6 +275,7 @@ function renderNpMenu(focusCur) {
     const list = tr.text || [];
     html = row('Выключены', tr.textOff || !list.some((x) => x.sel), 'data-nsel="text" data-g="-1" data-t="0" data-pref=""') + list.map((s) => row(s.name || 'Субтитры ' + (s.i + 1), s.sel && !tr.textOff, `data-nsel="text" data-g="${s.g}" data-t="${s.t}" data-pref="${esc(s.name)}"`)).join('');
     if (!list.length) html += '<div class="nm-e">Для этого видео субтитров нет</div>';
+    html += '<h4 class="nm-h">Размер</h4>' + NP_SUB_SIZES.map(([k, l]) => row(l, (npPrefs().subSize || 'm') === k, `data-nsize="${k}"`)).join('');
   } else if (NP.menu === 'quality') {
     title = 'Качество' + (NP.st.vh ? ' · сейчас ' + NP.st.vh + 'p' : '');
     const seenH = new Set(), list = (tr.video || []).slice().sort((a, b) => b.h - a.h || Number(b.sel) - Number(a.sel)).filter((v) => { if (seenH.has(v.h)) return false; seenH.add(v.h); v.sel = (tr.video || []).some((x) => x.h === v.h && x.sel); return true; });
@@ -288,6 +309,7 @@ document.addEventListener('click', (e) => {
     else if (['eps', 'audio', 'subs', 'quality', 'speed'].includes(a)) openNpMenu(a);
     return;
   }
+  if (el.dataset.nsize) { npPrefs().subSize = el.dataset.nsize; save(); npApplySubSize(); renderNpMenu(false); $(`.nm-r[data-nsize="${el.dataset.nsize}"]`)?.focus({ preventScroll: true }); return; }
   if (el.dataset.nsel) {
     NATIVE.npSelect(el.dataset.nsel, +el.dataset.g, +el.dataset.t);
     if (el.dataset.nsel === 'audio') npPrefs().audio = el.dataset.pref;

@@ -806,6 +806,17 @@ function openPick() {
 }
 function closePick() { $('#plPick').classList.add('hidden'); plFrame.focus(); }
 
+// плеер сам переключил серию (кнопка «Смотреть сейчас» на карточке «Далее» или автопереход): догоняем историю и прогресс
+function onEpisodeChanged(m) {
+  if (!playing || !playing.season) return;
+  const season = String(m.season), episode = String(m.episode);
+  if (String(playing.season) === season && String(playing.episode) === episode) return;
+  storeProgress(playing.key, 1e9, 1e9);
+  const s = playing.seasons.find((x) => String(x.season) === season); if (!s) return;
+  const ep = s.episodes.find((e) => String(e) === episode) ?? episode;
+  playing = { ...playing, season: s.season, episode: ep, key: progKey(playing.d.id, s.season, ep), resumeT: 0, startedAt: Date.now() };
+  addHistory(playing.d, playing.season, playing.episode);
+}
 addEventListener('message', (e) => {
   const m = e.data; if (!m || typeof m !== 'object' || e.source !== plFrame.contentWindow || !playing) return;
   if (m.luma) {
@@ -816,6 +827,7 @@ addEventListener('message', (e) => {
     else if (m.k === 'ended') { storeProgress(playing.key, 1e9, 1e9); if (playing.season && !nextEpisode(1)) closePlayer(); }
   } else if (m.event === 'adStart') adActive = true;
   else if (m.event === 'adStop') adActive = false;
+  else if (m.event === 'changeEpisode') onEpisodeChanged(m);
   else if (m.event === 'ended') { storeProgress(playing.key, Number(m.duration) || 1e9, Number(m.duration) || 1e9); if (playing.season) nextEpisode(1); }
 });
 window.lumaMedia = (k) => { if (window.npMedia && window.npMedia(k)) return; if (window.tvMedia && window.tvMedia(k)) return; if (playing) { if (k === 'next' && playing.season) nextEpisode(1); else if (k === 'prev' && playing.season) nextEpisode(-1); else plFrame.contentWindow?.postMessage({ lumaCmd: k }, '*'); } };

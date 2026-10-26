@@ -68,6 +68,17 @@ class MainActivity : Activity() {
         net = NetProxy(this)
         pendingLink = linkOf(intent)
         embedCss = try { assets.open("embed-theme.css").bufferedReader().readText() } catch (_: Exception) { "" }
+        // страница плеера не видит наши шрифты: Inter (400 и 600, кириллица и латиница) вшиваем в её стили
+        embedCss = try {
+            val fonts = StringBuilder()
+            for (line in assets.open("fonts.css").bufferedReader().readLines()) {
+                val m = Regex("url\\(fonts/(inter-[a-z]+-(?:400|600)-normal\\.woff2)\\)").find(line) ?: continue
+                if (!line.contains("font-family:'Inter'")) continue
+                val b64 = android.util.Base64.encodeToString(assets.open("fonts/" + m.groupValues[1]).readBytes(), android.util.Base64.NO_WRAP)
+                fonts.append(line.replace(m.value, "url(data:font/woff2;base64,$b64)")).append('\n')
+            }
+            fonts.toString() + embedCss
+        } catch (_: Exception) { embedCss }
         injected = try { assets.open("embed-inject.js").bufferedReader().readText() } catch (_: Exception) { "" }
         web = WebView(this).apply {
             setBackgroundColor(Color.TRANSPARENT)   // фон рисует страница, поэтому под ней может показываться видео

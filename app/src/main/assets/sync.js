@@ -162,7 +162,7 @@ function driveFinish(err) {
   DR.busy = false;
   DR.msg = err ? ({ NO_AUTH: 'Сессия истекла, войдите заново.', NETWORK: 'Нет связи с Google.' }[err] || 'Не получилось синхронизировать.') : 'Готово · ' + new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
   renderDriveBox();
-  if (!err) { refreshUi(); toast('Синхронизация завершена'); }
+  if (!err) { refreshUi(); toastSync('Синхронизация завершена'); }
 }
 let driveLastAuto = 0;
 function driveAutoSync() {

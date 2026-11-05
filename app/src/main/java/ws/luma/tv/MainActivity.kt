@@ -39,6 +39,7 @@ class MainActivity : Activity() {
     private lateinit var np: NativePlayer
     private lateinit var syncNet: SyncNet
     private lateinit var driveSync: DriveSync
+    private lateinit var torrent: Torrent
     private var syncSrv: ImportServer? = null
     private var pendingLink = ""   // «id,play» из luma://open, пока страница не загрузилась
 
@@ -132,6 +133,7 @@ class MainActivity : Activity() {
         np = NativePlayer(this, rootLayout) { code -> js(code) }
         syncNet = SyncNet { code -> js(code) }
         driveSync = DriveSync(this) { code -> js(code) }
+        torrent = Torrent(this, net) { code -> js(code) }
         web.visibility = android.view.View.INVISIBLE
         web.postDelayed({ web.visibility = android.view.View.VISIBLE }, 4000)   // на случай, если страница не загрузится
         web.requestFocus()
@@ -273,6 +275,12 @@ class MainActivity : Activity() {
         @JavascriptInterface fun driveDisconnect() { driveSync.disconnect() }
         @JavascriptInterface fun driveFetchRemote() { driveSync.fetchRemoteAsync() }
         @JavascriptInterface fun driveUpload(exportJson: String) { driveSync.uploadAsync(exportJson) }
+
+        // торренты: мост к TorrServe (проверка, установка, HTTP API на 127.0.0.1:8090)
+        @JavascriptInterface fun torrState(): String = torrent.state()
+        @JavascriptInterface fun torrOpen() { torrent.open() }
+        @JavascriptInterface fun torrInstall() { torrent.install() }
+        @JavascriptInterface fun torrApi(path: String, method: String, body: String): String = torrent.api(path, method, body)
 
         // выбор файла плейлиста через системный выбор файлов
         @JavascriptInterface fun pickFile() {

@@ -1,7 +1,14 @@
 'use strict';
 /* ================= ТВ: каналы, телепрограмма, плеер ================= */
-const TV_RAW = 'https://raw.githubusercontent.com/smolnp/IPTVru/gh-pages/';
-const TV_LISTS = [['main', TV_RAW + 'IPTVru.m3u'], ['stable', TV_RAW + 'IPTVstable.m3u8']];
+// Источники встроенных плейлистов: сначала своё зеркало (снимок с ПК, gist dmitrykirsh),
+// затем оригинал (вдруг вернётся) и зеркала-форки; пробуем по очереди
+const TV_RAWS = [
+  'https://gist.githubusercontent.com/dmitrykirsh/997edd2c85ffed1bf9d12ba7e24f4fca/raw/',
+  'https://raw.githubusercontent.com/smolnp/IPTVru/gh-pages/',
+  'https://raw.githubusercontent.com/AlbertAnimates/IPTVru/gh-pages/',
+  'https://raw.githubusercontent.com/timinside/IPTVru/gh-pages/',
+];
+const TV_LISTS = [['main', 'IPTVru.m3u'], ['stable', 'IPTVstable.m3u8']];
 const TV_EPG_URL = 'https://iptvx.one/epg/epg_lite.xml.gz';
 const TV_ADULT = /(xxx|эротик|для взрослых|взрослые|adult|18\+)/i;
 const TV_TTL = 6 * 3600e3;
@@ -57,9 +64,17 @@ function tvToChannels(items, prefix) {
   return [...by.values()];
 }
 async function tvFetchList(url, builtin) {
-  const r = await fetch(tvPx(url, '', '', true));   // плейлист каналов отдаём как есть, без переписывания адресов
-  if (!r.ok) throw new Error('HTTP ' + r.status);
-  return tvToChannels(tvParseM3u(await r.text(), builtin), '');
+  // встроенные списки — имя файла, пробуем все источники; свои списки — полный URL, один запрос
+  const tries = /^https?:\/\//i.test(url) ? [url] : TV_RAWS.map((b) => b + url);
+  let lastErr = null;
+  for (const u of tries) {
+    try {
+      const r = await fetch(tvPx(u, '', '', true));   // плейлист каналов отдаём как есть, без переписывания адресов
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return tvToChannels(tvParseM3u(await r.text(), builtin), '');
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr || new Error('NO_CHANNELS');
 }
 async function tvLoad(force) {
   if (TVD.loading) return TVD.loading;

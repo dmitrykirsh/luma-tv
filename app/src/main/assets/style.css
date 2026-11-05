@@ -73,6 +73,11 @@ button,input{font:inherit;color:inherit;border:0;background:none;outline:none}
 .btn.primary{background:var(--grad)}
 .btn.on svg{fill:var(--primary);stroke:var(--primary)}
 .btn:focus.on svg{fill:#fff;stroke:#fff}
+/* мини-кнопки действий на странице фильма: только иконка, при фокусе плавно раскрывается подпись */
+.det .btns .btn.mini{padding:0 21px;gap:0;max-width:70px;justify-content:center;overflow:hidden;transition:max-width .34s cubic-bezier(.25,.9,.25,1),transform .34s cubic-bezier(.25,.9,.25,1)}
+.det .btns .btn.mini .lbl{display:inline-block;max-width:0;opacity:0;margin-left:0;transition:max-width .34s cubic-bezier(.25,.9,.25,1),opacity .22s ease,margin-left .34s cubic-bezier(.25,.9,.25,1)}
+.det .btns .btn.mini:focus{max-width:560px;transform:scale(1.06)}
+.det .btns .btn.mini:focus .lbl{max-width:460px;opacity:1;margin-left:12px}
 .empty{padding:120px 48px;text-align:center;color:var(--muted);font-size:26px;line-height:1.5}
 .empty b{display:block;color:var(--text);font:600 32px var(--display);margin-bottom:10px}
 .spin{width:64px;height:64px;border-radius:50%;border:5px solid rgba(255,255,255,.12);border-top-color:var(--primary);animation:rot .8s linear infinite;margin:0 auto}
@@ -137,6 +142,9 @@ button,input{font:inherit;color:inherit;border:0;background:none;outline:none}
 
 #toast{position:absolute;left:50%;bottom:70px;transform:translate(-50%,30px);z-index:80;padding:16px 34px;border-radius:30px;background:rgba(24,26,32,.96);border:1px solid var(--line);font-size:24px;font-weight:600;opacity:0;transition:.3s;pointer-events:none;white-space:nowrap}
 #toast.on{opacity:1;transform:translate(-50%,0)}
+/* тихий вариант для фоновой синхронизации: маленький, в правом нижнем углу */
+#toast.q{left:auto;right:28px;bottom:24px;transform:translateY(30px);padding:10px 20px;border-radius:18px;font-size:17px;font-weight:500;background:rgba(24,26,32,.85)}
+#toast.q.on{transform:none}
 /* заставка: только transform/opacity, поэтому вся анимация считается на видеокарте и почти не грузит приставку */
 #splash{position:absolute;inset:0;z-index:100;background:var(--bg);overflow:hidden;display:flex;align-items:center;justify-content:center}
 #splash.out{opacity:0;transform:scale(1.05);transition:opacity .5s ease-in,transform .5s ease-in}
@@ -556,3 +564,46 @@ body.pclk-always .np-osd .pclk, body.pclk-always #tvOsd .pclk{display:none}
 .srow.who{display:flex;align-items:center;gap:18px;padding:18px 24px;border-radius:22px;background:rgba(248,249,250,.06);margin-bottom:12px}.srow.who .av{margin:0;width:68px;height:68px;font-size:30px}.srow.who b{display:block;font:700 28px var(--display)}.srow.who small{display:block;font-size:20px;color:var(--muted);margin-top:4px}.srow.who i{margin-left:auto;font-style:normal;font-size:22px;color:#5EE29A}
 .sc.gq{align-items:center}.sc.gq .sy-qr{margin:0 24px 0 0}.sc.gq .sy-qr svg{width:200px;height:200px}.gcode{margin-top:10px;font-size:26px}.gcode b{font:700 38px/1.2 var(--display);letter-spacing:3px}
 .smeta.bad{color:#FF6B8A}
+
+/* ---------- торренты ---------- */
+.trh{display:flex;gap:28px;align-items:flex-start;padding:8px 0 4px}
+.trp{flex:none;width:120px;height:180px;border-radius:14px;overflow:hidden;background:var(--surface)}
+.trp img{width:100%;height:100%;object-fit:cover}
+.trt{min-width:0;padding-top:6px}
+.trt h1{font-size:40px;margin:2px 0 8px}
+.trbar{display:flex;gap:14px;align-items:center;padding:14px 0 18px;flex-wrap:wrap}
+.trseas{display:flex;gap:12px;align-items:center;padding-top:16px;flex-wrap:wrap}
+.trseas .chip small{margin-right:8px}
+.trcount{font-size:22px;color:var(--muted);padding:0 6px 12px}
+.trrow{display:flex;gap:26px;align-items:center;width:100%;min-height:104px;padding:16px 26px;margin-bottom:14px;border-radius:20px;background:var(--surface);text-align:left;transition:transform .15s}
+.trrow:focus{background:var(--grad);color:#fff;transform:scale(1.01)}
+.trr-main{flex:1;min-width:0}
+.trr-main b{display:block;font-size:25px;font-weight:600;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.trr-badges{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.trb{font-style:normal;font-size:18px;font-weight:700;letter-spacing:.4px;padding:3px 10px;border-radius:8px;background:rgba(255,255,255,.1);color:#c9cdd6}
+.trrow:focus .trb{background:rgba(255,255,255,.22);color:#fff}
+.trb.dub{background:rgba(255,179,0,.16);color:#FFB800}
+.trrow:focus .trb.dub{background:rgba(255,179,0,.32);color:#FFD34D}
+.trr-side{flex:none;display:flex;align-items:center;gap:16px;font-style:normal}
+.trr-side i{font-style:normal;font-size:23px;font-weight:700}
+.trseed.hi{color:#5EE29A}.trseed.mid{color:#FFB800}.trseed.lo{color:#FF6B8A}
+.trpeer{color:var(--muted);font-weight:600}
+.trsz{color:#d6d9e0}
+.trr-side small{font-size:19px;color:var(--muted);min-width:190px;text-align:right}
+.trrow:focus .trpeer,.trrow:focus .trr-side small{color:rgba(255,255,255,.85)}
+.trempty{margin:46px auto 0;max-width:900px;text-align:center;padding:64px 48px;border-radius:28px;background:rgba(24,26,32,.85)}
+.tre-ic{width:96px;height:96px;margin:0 auto 22px;border-radius:50%;background:var(--grad);display:flex;align-items:center;justify-content:center}
+.tre-ic svg{width:52px;height:52px;fill:none;stroke:#fff;stroke-width:1.8;stroke-linecap:round}
+.trempty h2{font-size:34px;margin-bottom:12px}
+.trempty p{font-size:23px;line-height:1.55;color:#b9bec8;max-width:640px;margin:0 auto 30px}
+.trempty-btns{display:flex;gap:16px;justify-content:center}
+.trwait{display:flex;align-items:center;gap:18px;min-height:64px;font-size:24px;color:#d6d9e0}
+.trfiles{max-height:560px;overflow:auto}
+
+/* ---------- торренты: исправления ---------- */
+.sc:has(> .srow){display:flex;flex-direction:column;gap:14px}
+.np-menu h3{padding-right:190px}
+.trh{padding:38px 0 12px 56px}
+.trp{width:152px;height:228px}
+.trt{padding-top:10px}
+.trt .trdesc{font-size:22px;line-height:1.5;color:#b9bec8;margin-top:12px;max-width:1250px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}

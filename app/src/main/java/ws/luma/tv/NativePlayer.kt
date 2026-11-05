@@ -79,6 +79,7 @@ class NativePlayer(private val activity: Activity, private val root: FrameLayout
         var urlIdx = 0
         fun itemAt(i: Int) = MediaItem.Builder().setUri(urlList[i]).setSubtitleConfigurations(subsList).build()
         val item = itemAt(0)
+        PromoGuard.reset(); PromoGuard.onWait = { js("window.npEvent && window.npEvent('promo')") }   // реклама сайта в потоке: перезапрашиваем кусок, пока не придёт настоящий
         val load = DefaultLoadControl.Builder().setBufferDurationsMs(20000, 60000, 1500, 3000).build()
         val p = ExoPlayer.Builder(activity).setMediaSourceFactory(DefaultMediaSourceFactory(http)).setLoadControl(load).build()
         p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()

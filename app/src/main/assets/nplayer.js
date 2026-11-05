@@ -79,7 +79,7 @@ async function playItemNative(d, seasons, season, episode, opts = {}) {
   const key = progKey(d.id, season, episode);
   const resume = opts.fromStart ? null : resumeInfo(d.id, season, episode);
   const token = ++NP.token;
-  Object.assign(NP, { on: true, scrub: null, d, seasons, season, episode, key, tr: null, secs: [], mode: 'play', menu: '', st: { p: 0, d: 0, pl: false, b: true, w: true }, lastSave: 0, subApplied: '' });
+  Object.assign(NP, { on: true, scrub: null, d, seasons, season, episode, key, tr: null, torr: false, secs: [], mode: 'play', menu: '', st: { p: 0, d: 0, pl: false, b: true, w: true }, lastSave: 0, subApplied: '' });
   addHistory(d, season, episode);
   npEnsureDom(); npShow();
   $('#np .np-load').classList.remove('hidden'); $('#np .np-load span').textContent = 'Загружаем…';
@@ -103,6 +103,7 @@ async function playItemNative(d, seasons, season, episode, opts = {}) {
   renderNpButtons();
 }
 function npFail(msg) {
+  if (NP.torr) { toast(msg); npClose(true); return; }
   toast(msg + ' — открываем плеер сайта');
   const { d, seasons, season, episode } = NP;
   npClose(true);
@@ -144,7 +145,8 @@ window.npState = (s) => {
 window.npEvent = (ev, msg) => {
   if (!NP.on) return;
   if (ev === 'ready') { $('#np .np-load').classList.add('hidden'); npApplyPrefs(); }
-  else if (ev === 'ended') { storeProgress(NP.key, 1e9, 1e9); if (!npNext(1)) npClose(); }
+  else if (ev === 'ended') { if (NP.key) storeProgress(NP.key, 1e9, 1e9); if (!npNext(1)) npClose(); }
+  else if (ev === 'promo') { if (Date.now() - (NP.promoAt || 0) > 30000) { NP.promoAt = Date.now(); toast('В потоке реклама сайта: ждём чистое видео'); } }
   else if (ev === 'fallback') toast('Видео 1080p не запустилось, включаем обычный поток')
   else if (ev === 'error') npFail('Ошибка воспроизведения' + (msg ? ' (' + msg + ')' : ''));
   else if (ev === 'tracks') { if (NP.menu) renderNpMenu(); }
@@ -169,6 +171,8 @@ function npDoSkip() {
 function npList() { const out = []; for (const s of NP.seasons) for (const e of s.episodes) out.push([s.season, e]); return out; }
 function npHasNext() { if (!NP.season) return false; const l = npList(); const i = l.findIndex(([s, e]) => String(s) === String(NP.season) && String(e) === String(NP.episode)); return i >= 0 && i < l.length - 1; }
 function npNext(dir) {
+  // торренты: серии — файлы раздачи в порядке номеров
+  if (NP.torr && NP.torr.files) { const i = NP.torr.idx + dir; if (i < 0 || i >= NP.torr.files.length) return false; return window.npTorrPlayAt ? window.npTorrPlayAt(i) : false; }
   if (!NP.season) return false;
   const l = npList(); const i = l.findIndex(([s, e]) => String(s) === String(NP.season) && String(e) === String(NP.episode));
   const n = l[i + dir]; if (!n) return false;
@@ -226,7 +230,7 @@ function npPaintChips() {
   set('speed', 'Скорость', Math.abs((tr.speed || 1) - 1) < 0.01 ? '' : (tr.speed || 1) + '×');
 }
 function renderNpButtons() {
-  const ep = !!NP.season;
+  const ep = !!NP.season || !!(NP.torr && NP.torr.files && NP.torr.files.length > 1);
   $('#npBtns').innerHTML = `${ep ? `<button class="npb f" tabindex="-1" data-np="prev" data-k="npb:prev" title="Предыдущая серия">⏮</button>` : ''}
     <button class="npb f" tabindex="-1" data-np="back10" data-k="npb:b" title="−10 с">${NPI.back}</button>
     <button class="npb big f" tabindex="-1" data-np="toggle" data-k="npb:t">${NP.st.w ? NPI.pause : NPI.play}</button>
@@ -401,7 +405,7 @@ window.npMedia = (k) => {
 /* ---------- трейлеры: прямой поток Rutube в нативном плеере, без их плеера и рекламы ---------- */
 async function playTrailerNative(t) {
   const token = ++NP.token;
-  Object.assign(NP, { on: true, d: { id: -1, name: t.title }, seasons: [], season: null, episode: null, key: '', tr: null, secs: [], mode: 'play', menu: '', st: { p: 0, d: 0, pl: false, b: true, w: true }, lastSave: 0, subApplied: '1', audioNames: [] });
+  Object.assign(NP, { on: true, d: { id: -1, name: t.title }, seasons: [], season: null, episode: null, key: '', tr: null, torr: false, secs: [], mode: 'play', menu: '', st: { p: 0, d: 0, pl: false, b: true, w: true }, lastSave: 0, subApplied: '1', audioNames: [] });
   npEnsureDom(); npShow();
   $('#np .np-load').classList.remove('hidden'); $('#np .np-load span').textContent = 'Загружаем трейлер…';
   $('#np .np-title b').textContent = t.title; $('#np .np-title span').textContent = 'Трейлер';

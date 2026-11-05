@@ -18,8 +18,8 @@ android {
         applicationId = "ws.luma.tv"
         minSdk = 24
         targetSdk = 34
-        versionCode = 131
-        versionName = "1.1.1"
+        versionCode = 133
+        versionName = "1.2.0"
         buildConfigField("String", "DRIVE_CLIENT_ID", "\"${syncProps.getProperty("driveClientId", "")}\"")
         buildConfigField("String", "DRIVE_CLIENT_SECRET", "\"${syncProps.getProperty("driveClientSecret", "")}\"")
         buildConfigField("String", "DRIVE_DESK_ID", "\"${syncProps.getProperty("driveDesktopClientId", "")}\"")

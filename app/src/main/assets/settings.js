@@ -105,7 +105,7 @@ window.lumaFilePicked = async (json) => {
 };
 
 /* ---------- экран ---------- */
-const ST_SECTIONS = [['sync', 'Google-аккаунт', 'sync', 'Не подключено'], ['lan', 'Wi-Fi сеть', 'tv', 'ПК и телефон'], ['keys', 'Сервисы и ключи', 'key', 'TMDB, OMDb, Trakt, MDBList'], ['channels', 'Каналы', 'live', 'Плейлисты'], ['look', 'Оформление', 'film', 'Заставка и фон'], ['data', 'Данные', 'trash', 'История и кэш'], ['upd', 'Обновления', 'refresh', 'Версия приложения'], ['about', 'О приложении', 'info', 'Luma TV']];
+const ST_SECTIONS = [['sync', 'Google-аккаунт', 'sync', 'Не подключено'], ['lan', 'Wi-Fi сеть', 'tv', 'ПК и телефон'], ['keys', 'Сервисы и ключи', 'key', 'TMDB, OMDb, Trakt, MDBList'], ['channels', 'Каналы', 'live', 'Плейлисты'], ['torrents', 'Торренты', 'magnet', 'TorrServe'], ['look', 'Оформление', 'film', 'Заставка и фон'], ['data', 'Данные', 'trash', 'История и кэш'], ['upd', 'Обновления', 'refresh', 'Версия приложения'], ['about', 'О приложении', 'info', 'Luma TV']];
 let stCur = 'sync';
 function renderSettings3(r, t) {
   stCur = r.sec || stCur || 'sync';
@@ -137,6 +137,9 @@ function paintPane() {
       `<button class="srow f" tabindex="-1" data-sact="pllink" data-k="plus"><span class="sri">＋</span><span><b>Добавить по ссылке</b><small>Адрес M3U/M3U8, ввод на ТВ или с телефона</small></span><i>›</i></button>
        <button class="srow f" tabindex="-1" data-sact="plfile" data-k="pfile"><span class="sri">${ico('film')}</span><span><b>Добавить из файла</b><small>Файл .m3u или .m3u8 из памяти ТВ или флешки</small></span><i>›</i></button>
        <button class="srow f" tabindex="-1" data-sact="plphone" data-k="pphone"><span class="sri">${ico('search')}</span><span><b>Отправить ссылку с телефона</b><small>Откроется QR-код</small></span><i>›</i></button>`;
+  } else if (stCur === 'torrents') {
+    p.innerHTML = '<div class="empty" style="padding:40px"><div class="spin"></div></div>';
+    trSettingsPane(p);
   } else if (stCur === 'look') {
     const on = (k) => optGet(k, '1') !== '0';
     p.innerHTML = card('film', 'Оформление', 'Заставка при запуске и анимированный фон.') +

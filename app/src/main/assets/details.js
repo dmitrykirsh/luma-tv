@@ -140,10 +140,11 @@ async function renderDetails2(r, t) {
       ${(inf.country || []).slice(0, 2).map((c) => `<span class="c">${esc(c)}</span>`).join('')}${d.quality ? `<span class="c">${esc(d.quality)}</span>` : ''}</div>
     <div class="genres">${(inf.genre || []).map((g) => `<button class="chip genre f" tabindex="-1" data-genre="${esc(g)}" data-k="g:${esc(g)}">${esc(g)}</button>`).join('')}</div>
     <div class="rates" id="dRates">${kp ? rateChip('kp', rateCls(kp), kp.toFixed(1), 'Кинопоиск') : ''}${im ? rateChip('imdb', rateCls(im), im.toFixed(1), 'IMDb') : ''}</div>
-    <div class="btns"><button class="btn primary f" tabindex="-1" data-act="watch" data-k="watch">${ico('play')}${esc(watch)}</button>
-      ${rsm ? `<button class="btn f" tabindex="-1" data-act="start" data-k="start">${ico('restart')}С начала</button>` : ''}
-      <button class="btn f" tabindex="-1" data-act="trailer" data-k="trailer">${ico('trailer')}Трейлер</button>
-      <button class="btn f ${isFav(d.id) ? 'on' : ''}" tabindex="-1" data-act="fav" data-k="fav">${ico('heart')}<span>${isFav(d.id) ? 'В избранном' : 'В избранное'}</span></button></div></div></div>
+    <div class="btns"><button class="btn primary mini f" tabindex="-1" data-act="watch" data-k="watch">${ico('play')}<span class="lbl">${esc(watch)}</span></button>
+      ${rsm ? `<button class="btn mini f" tabindex="-1" data-act="start" data-k="start">${ico('restart')}<span class="lbl">С начала</span></button>` : ''}
+      <button class="btn mini f" tabindex="-1" data-act="trailer" data-k="trailer">${ico('trailer')}<span class="lbl">Трейлер</span></button>
+      <button class="btn mini f" tabindex="-1" data-act="torrents" data-k="torrents">${ico('magnet')}<span class="lbl">Торренты</span></button>
+      <button class="btn mini f ${isFav(d.id) ? 'on' : ''}" tabindex="-1" data-act="fav" data-k="fav">${ico('heart')}<span class="lbl">${isFav(d.id) ? 'В избранном' : 'В избранное'}</span></button></div></div></div>
     <div class="dtabs" id="dTabs">${tabs.map(([k, l]) => `<button class="chip f" tabindex="-1" data-dtab="${k}" data-k="tab:${k}">${l}</button>`).join('')}</div>
     <div id="dPanel" class="dpanel"></div></div>`;
   $('[data-act=watch]').focus({ preventScroll: true });
@@ -253,6 +254,7 @@ document.addEventListener('click', (e) => {
   if (el.dataset.pid) { go('person', { lift: el.dataset.pid }); return; }
   if (el.dataset.trailer) { const x = DX.trList?.[+el.dataset.trailer]; if (x) openTrailer(x); return; }
   if (el.dataset.shotbig) { openLightbox(DX.shots.map((b) => TMI(b, 'w1280')), +el.dataset.shotbig); return; }
+  if (el.dataset.act === 'torrents') { go('torrents', { id: DX.d.id }); return; }
   if (el.dataset.act === 'trailer') {
     if (!DX.trailers) DX.trailers = findTrailers({ name: DX.d.name, origin: DX.d.origin_name || DX.inf.name_eng, year: DX.d.year, tmdb: DX.T?.tmdb, kind: DX.T?.kind });
     el.style.opacity = .6;

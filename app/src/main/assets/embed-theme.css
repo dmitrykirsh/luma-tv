@@ -1,6 +1,7 @@
 /* Тема страницы плеера (embed) для Luma TV. Управление, меню, субтитры и карточку «Далее» рисует embed-inject.js,
    поэтому здесь прячем родной интерфейс плеера и его субтитры. Классы у плеера «хэшированные» (controls_11s), поэтому везде [class*="…"]. */
 html,body{background:#000}
+video:focus,iframe:focus{outline:none!important}
 [class*="controls_"],[class*="playWrapper_"],[class*="menu_"]{display:none!important}
 [data-ltv-next]{opacity:0!important;pointer-events:none!important}
 video::-webkit-media-text-track-container{display:none!important}

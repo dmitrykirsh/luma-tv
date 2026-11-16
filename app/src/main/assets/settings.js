@@ -14,8 +14,9 @@ const IDB = {
 /* ---------- окна: ввод и подтверждение ---------- */
 function inputDlg({ title, sub, help, fields, ok = 'Сохранить', onOk }) {
   const m = $('#modal');
+  if (route.name === 'settings' && m.classList.contains('hidden')) m.dataset.returnSettings = document.activeElement?.dataset?.k || '';
   m.innerHTML = `<div class="dlg top"><h3>${esc(title)}</h3>${sub ? `<p class="sub">${esc(sub)}</p>` : ''}${help ? `<div class="help">${help}</div>` : ''}
-    <div class="fields">${fields.map((f) => `<label>${esc(f.label)}</label><input class="din f" tabindex="-1" data-id="${f.id}" data-k="in:${f.id}" type="text" value="${esc(f.value || '')}" placeholder="${esc(f.placeholder || '')}" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="next">`).join('')}</div>
+    <div class="fields">${fields.map((f) => `<label>${esc(f.label)}</label><input class="din f" tabindex="-1" data-id="${f.id}" data-k="in:${f.id}" type="${f.type === 'password' ? 'password' : 'text'}" value="${esc(f.value || '')}" placeholder="${esc(f.placeholder || '')}" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="next">`).join('')}</div>
     <div class="derr" id="dErr"></div>
     <div class="dbtns"><button class="btn primary f" tabindex="-1" data-dok="1" data-k="din:ok">${esc(ok)}</button><button class="btn f" tabindex="-1" data-dno="1" data-k="din:no">Отмена</button></div></div>`;
   m.classList.remove('hidden');
@@ -32,13 +33,13 @@ document.addEventListener('click', async (e) => {
   const el = e.target.closest('.f'); if (!el) return;
   if (el.dataset.cfy) { closeDlg(); const f = window.__cf; window.__cf = null; f && f(); return; }
   if (el.dataset.cfn) { closeDlg(); return; }
-  if (el.dataset.dno) { closeDlg(); return; }
+  if (el.dataset.dno) { window.__in?.ins?.forEach(i=>{if(i.type==='password')i.value='';}); window.__in=null; closeDlg(); return; }
   if (el.dataset.dok && window.__in) {
     const { fields, onOk, ins } = window.__in; const vals = {}; fields.forEach((f, i) => { vals[f.id] = ins[i].value.trim(); });
     const err = $('#dErr'); err.textContent = ''; el.disabled = true; el.style.opacity = .6;
     let msg = null; try { msg = await onOk(vals); } catch { msg = 'Не получилось. Проверьте интернет и попробуйте ещё раз.'; }
     el.disabled = false; el.style.opacity = 1;
-    if (msg) err.textContent = msg; else { window.__in = null; closeDlg(); }
+    if (msg) err.textContent = msg; else { ins.forEach(i=>{if(i.type==='password')i.value='';}); window.__in = null; closeDlg(); }
   }
 });
 
@@ -109,16 +110,16 @@ const ST_SECTIONS = [['sync', 'Google-аккаунт', 'sync', 'Не подкл�
 let stCur = 'sync';
 function renderSettings3(r, t) {
   stCur = r.sec || stCur || 'sync';
-  view.innerHTML = `<div class="page"><div class="st"><nav class="st-nav">${ST_SECTIONS.map(([k, l, ic, sub]) => `<button class="st-it f ${k === stCur ? 'on' : ''}" tabindex="-1" data-st="${k}" data-k="st:${k}"><span class="sti">${ico(ic)}</span><span><b>${l}</b><small>${k === 'sync' ? driveNavSub() : sub}</small></span></button>`).join('')}</nav><div class="st-pane" id="stPane"></div></div></div>`;
+  view.innerHTML = `<div class="page tv-settings-page">${tvCatalogHeader('Настройки','Подключения, устройства и оформление Luma.','LUMA TV')}<div class="st"><nav class="st-nav">${ST_SECTIONS.map(([k, l, ic, sub]) => `<button class="st-it f ${k === stCur ? 'on' : ''}" tabindex="-1" data-st="${k}" data-k="st:${k}" aria-pressed="${k === stCur}"><span class="sti">${ico(ic)}</span><span><b>${l}</b><small>${k === 'sync' ? driveNavSub() : sub}</small></span></button>`).join('')}</nav><div class="st-pane" id="stPane"></div></div></div>`;
   paintPane();
   ($(`[data-st=${stCur}]`) || $('.st-it'))?.focus({ preventScroll: true });
 }
 window.RENDER.settings = renderSettings3;
 
 function lastSyncText() { return S.synced ? new Date(S.synced).toLocaleString('ru', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) : (S.imported ? new Date(S.imported).toLocaleString('ru', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) : 'ещё не было'); }
-function paintPane() {
+function paintPane(focusPane = false) {
   const p = $('#stPane'); if (!p) return;
-  $$('.st-it').forEach((b) => b.classList.toggle('on', b.dataset.st === stCur));
+  $$('.st-it').forEach((b) => {const on=b.dataset.st===stCur;b.classList.toggle('on',on);b.setAttribute('aria-pressed',String(on));});
   const card = (ic, title, text) => `<div class="sc hero"><div class="sci">${ico(ic)}</div><div><b>${title}</b><p>${text}</p></div></div>`;
   if (stCur === 'sync') {
     p.innerHTML = driveRowsHtml();
@@ -128,7 +129,8 @@ function paintPane() {
        <button class="srow f" tabindex="-1" data-sact="phone" data-k="s:phone"><span class="sri">${ico('search')}</span><span><b>Принять файл с телефона</b><small>Показать QR-код для резервной копии (.luma)</small></span><i>›</i></button>
        <div class="smeta">Последняя синхронизация: ${esc(lastSyncText())}</div>`;
   } else if (stCur === 'keys') {
-    p.innerHTML = card('key', 'Сервисы и ключи', 'Ключи нужны для кадров, рейтингов и подборок. Они бесплатные, а вводить их можно прямо здесь или получить синхронизацией с ПК.') +
+    let ao={}; try { ao=JSON.parse(NATIVE?.aoStatus()||'{}'); } catch {}
+    p.innerHTML = card('key', 'Сервисы и ключи', 'Подключения для просмотра, подборок, кадров и рейтингов.') + `<button class="srow f" tabindex="-1" data-aoauth="1" data-k="ao:auth"><span class="sri">${ico('key')}</span><span><b>AnimeOn</b><small>${ao.connected ? 'Подключено: '+esc(ao.email||'аккаунт') : 'Вход для плеера AnimeOn 2.0 · инструкция внутри'}</small></span><i>›</i></button>` + (ao.connected ? '<button class="srow f" tabindex="-1" data-aologout="1" data-k="ao:logout"><span class="sri">'+ico('trash')+'</span><span><b>Выйти из AnimeOn</b><small>Отключить аккаунт на этом телевизоре</small></span><i>›</i></button>' : '') +
       Object.entries(KEYS).map(([k, K]) => { const on = !!(S.secrets && S.secrets[k]); return `<button class="srow f" tabindex="-1" data-key="${k}" data-k="key:${k}"><span class="sri bd ${on ? 'ok' : ''}">${on ? '✓' : '—'}</span><span><b>${K.name}</b><small>${esc(K.use)}${k === 'tmdb' && !on ? ' Сейчас работает общий тестовый ключ: он может перестать работать, лучше введите свой.' : ''}</small></span><i>${on ? 'Изменить' : 'Ввести'}</i></button>`; }).join('');
   } else if (stCur === 'channels') {
     const pls = customLists();
@@ -139,13 +141,18 @@ function paintPane() {
        <button class="srow f" tabindex="-1" data-sact="plphone" data-k="pphone"><span class="sri">${ico('search')}</span><span><b>Отправить ссылку с телефона</b><small>Откроется QR-код</small></span><i>›</i></button>`;
   } else if (stCur === 'torrents') {
     p.innerHTML = '<div class="empty" style="padding:40px"><div class="spin"></div></div>';
-    trSettingsPane(p);
+    trSettingsPane(p, focusPane);
   } else if (stCur === 'look') {
     const on = (k) => optGet(k, '1') !== '0';
     p.innerHTML = card('film', 'Оформление', 'Заставка при запуске и анимированный фон.') +
       `<button class="srow f" tabindex="-1" data-sact="opt:intro" data-k="o:intro"><span class="sri">${ico('film')}</span><span><b>Заставка со звуком</b><small>Короткая анимация логотипа и звук при запуске</small></span><i>${on('luma.tv.intro') ? 'Вкл' : 'Выкл'}</i></button>
        <button class="srow f" tabindex="-1" data-sact="opt:holi" data-k="o:holi"><span class="sri">${ico('film')}</span><span><b>Праздничные подборки</b><small>Баннер с фильмами к Новому году, Хэллоуину, 9 мая и другим датам</small></span><i>${on('luma.tv.holi') ? 'Вкл' : 'Выкл'}</i></button>
        <button class="srow f" tabindex="-1" data-sact="opt:pclock" data-k="o:pclock"><span class="sri">${ico('refresh')}</span><span><b>Часы в плеере</b><small>Время в правом верхнем углу: только с панелью управления или всё время</small></span><i>${({ '0': 'Выкл', '1': 'С панелью', '2': 'Всегда' })[optGet('luma.tv.pclock', '1')] || 'С панелью'}</i></button>
+       <button class="srow f" tabindex="-1" data-sact="opt:pauseDetails" data-k="o:pauseDetails"><span class="sri">${ico('info')}</span><span><b>Информация на паузе</b><small>Название, описание и оставшееся время поверх видео</small></span><i>${on('luma.tv.pauseDetails')?'Вкл':'Выкл'}</i></button>
+       <button class="srow f" tabindex="-1" data-sact="opt:backgroundTrailers" data-k="o:backgroundTrailers"><span class="sri">${ico('trailer')}</span><span><b>Трейлеры на фоне</b><small>Тихое видео Rutube на странице фильма или сериала</small></span><i>${on('luma.tv.backgroundTrailers')?'Вкл':'Выкл'}</i></button>
+       <button class="srow f" tabindex="-1" data-sact="opt:personalHome" data-k="o:personalHome"><span class="sri">${ico('heart')}</span><span><b>Подборки из библиотеки на главной</b><small>Непросмотренное из избранного и ближайшие серии</small></span><i>${optGet('luma.tv.personalHome','0')==='1'?'Вкл':'Выкл'}</i></button>
+       <button class="srow f" tabindex="-1" data-sact="opt:autoSkipOpening" data-k="o:autoSkipOpening"><span class="sri">${ico('play')}</span><span><b>Автоматически пропускать опенинг</b><small>Только когда известны точные отметки заставки</small></span><i>${optGet('luma.tv.autoSkipOpening','0')==='1'?'Вкл':'Выкл'}</i></button>
+       <button class="srow f" tabindex="-1" data-sact="opt:autoSkipEnding" data-k="o:autoSkipEnding"><span class="sri">${ico('play')}</span><span><b>Автоматически пропускать эндинг</b><small>Только когда известны точные отметки концовки</small></span><i>${optGet('luma.tv.autoSkipEnding','0')==='1'?'Вкл':'Выкл'}</i></button>
        <button class="srow f" tabindex="-1" data-sact="opt:aurora" data-k="o:aurora"><span class="sri">${ico('star')}</span><span><b>Анимированный фон</b><small>Медленное тёмное переливание за каталогом</small></span><i>${on('luma.tv.aurora') ? 'Вкл' : 'Выкл'}</i></button>`;
   } else if (stCur === 'data') {
     p.innerHTML = card('trash', 'Данные на этом ТВ', 'История и прогресс хранятся только на ТВ. Избранное и подборки можно синхронизировать с ПК.') +
@@ -162,7 +169,7 @@ let stT = 0;
 document.addEventListener('focusin', (e) => { const el = e.target.closest?.('.f'); if (el && el.dataset.st && route.name === 'settings' && el.dataset.st !== stCur) { clearTimeout(stT); stT = setTimeout(() => { stCur = el.dataset.st; paintPane(); }, 200); } });
 document.addEventListener('click', (e) => {
   const el = e.target.closest('.f'); if (!el || route.name !== 'settings') return;
-  if (el.dataset.st) { stCur = el.dataset.st; paintPane(); $('#stPane .f')?.focus({ preventScroll: true }); return; }
+  if (el.dataset.st) { stCur = el.dataset.st; paintPane(true); $('#stPane .f')?.focus({ preventScroll: true }); return; }
   if (el.dataset.key) { keyDlg(el.dataset.key); return; }
   const a = el.dataset.sact;
   if (a === 'opt:pclock') {   // три состояния по кругу: с панелью, всегда, выкл
@@ -172,7 +179,7 @@ document.addEventListener('click', (e) => {
     return;
   }
   if (a && a.startsWith('opt:')) {
-    const k = 'luma.tv.' + a.slice(4), v = optGet(k, '1') === '0' ? '1' : '0';
+    const k = 'luma.tv.' + a.slice(4), v = optGet(k, ['opt:personalHome','opt:autoSkipOpening','opt:autoSkipEnding'].includes(a)?'0':'1') === '0' ? '1' : '0';
     try { localStorage.setItem(k, v); } catch {}
     if (a === 'opt:aurora') document.body.classList.toggle('noaurora', v === '0');
     paintPane(); $(`[data-sact="${a}"]`)?.focus({ preventScroll: true });
@@ -186,3 +193,13 @@ document.addEventListener('click', (e) => {
   else if (a === 'clearhist') confirmDlg('Очистить историю и место просмотра?', 'Очистить', () => { S.history.forEach((h) => goneMark('h', h.id)); S.history = []; S.progress = {}; save(); toast('История очищена'); refreshHere('d:hist'); });
   else if (a === 'clearcache') { for (const k of ['luma.tv.ch2', 'luma.tv.epg', 'luma.tv.rows', 'luma.tv.m', 'luma.tv.lm', 'luma.tv.lb', 'luma.tv.omdb']) { try { localStorage.removeItem(k); } catch {} } tmFindCache.clear(); tmRows = {}; TVD.channels = []; toast('Кэш очищен'); }
 });
+
+document.addEventListener('click', e => { const el=e.target.closest('[data-aoauth]'); if(!el || !NATIVE?.aoLogin)return;
+  let status={};try{status=JSON.parse(NATIVE.aoStatus())}catch{}
+  inputDlg({title:'Вход в AnimeOn',sub:'Если аккаунта ещё нет, зарегистрируйтесь на animeon.cc с телефона или ПК. Затем введите почту и пароль от AnimeOn. Вход нужен для плеера AnimeOn 2.0.',ok:'Войти',fields:[{id:'email',label:'Почта',value:status.email||''},{id:'password',label:'Пароль',type:'password'}],onOk: async values=>{
+    const result=JSON.parse(NATIVE.aoLogin(values.email,values.password));if(result.ok)await aoRefreshSecret();if(!result.ok)return result.error==='INVALID_CREDENTIALS'?'Почта или пароль не подошли.':'Не удалось подключиться к AnimeOn.';
+    setTimeout(()=>{paintPane();document.querySelector('[data-aoauth]')?.focus({preventScroll:true});},0);return null;
+  }});
+});
+
+document.addEventListener('click', e=>{if(!e.target.closest('[data-aologout]'))return; confirmDlg('Выйти из AnimeOn на этом ТВ?','Выйти',()=>{NATIVE.aoLogout();paintPane();document.querySelector('[data-aoauth]')?.focus({preventScroll:true});});});

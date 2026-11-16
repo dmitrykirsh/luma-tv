@@ -1,6 +1,7 @@
 package ws.luma.tv
 
 import android.app.Activity
+import android.content.Context
 import android.graphics.Color
 import android.net.Uri
 import android.os.Handler
@@ -19,6 +20,9 @@ import androidx.media3.common.Tracks
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.Renderer
+import androidx.media3.exoplayer.text.TextOutput
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -34,6 +38,7 @@ class NativePlayer(private val activity: Activity, private val root: FrameLayout
     private val handler = Handler(Looper.getMainLooper())
     private var view: PlayerView? = null
     private var gen = 0
+    @Volatile private var subtitleShiftUs = 0L
 
     private val ticker = object : Runnable {
         override fun run() { push(); handler.postDelayed(this, 500) }
@@ -58,6 +63,7 @@ class NativePlayer(private val activity: Activity, private val root: FrameLayout
     fun start(json: String) {
         val o = JSONObject(json)
         stopInternal()
+        subtitleShiftUs = (o.optDouble("subtitleShiftMs", 0.0).coerceIn(-30000.0, 30000.0) * 1000).toLong()
         val myGen = ++gen
         val http = DefaultHttpDataSource.Factory()
             .setUserAgent(o.optString("ua", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/130 Safari/537.36"))
@@ -81,7 +87,21 @@ class NativePlayer(private val activity: Activity, private val root: FrameLayout
         val item = itemAt(0)
         PromoGuard.reset(); PromoGuard.onWait = { js("window.npEvent && window.npEvent('promo')") }   // реклама сайта в потоке: перезапрашиваем кусок, пока не придёт настоящий
         val load = DefaultLoadControl.Builder().setBufferDurationsMs(20000, 60000, 1500, 3000).build()
-        val p = ExoPlayer.Builder(activity).setMediaSourceFactory(DefaultMediaSourceFactory(http)).setLoadControl(load).build()
+        val renderers = object : DefaultRenderersFactory(activity) {
+            override fun buildTextRenderers(context: Context, output: TextOutput, outputLooper: Looper, extensionRendererMode: Int, out: ArrayList<Renderer>) {
+                val first = out.size
+                super.buildTextRenderers(context, output, outputLooper, extensionRendererMode, out)
+                for (i in first until out.size) {
+                    val textRenderer = out[i]
+                    out[i] = object : Renderer by textRenderer {
+                        override fun render(positionUs: Long, elapsedRealtimeUs: Long) {
+                            textRenderer.render((positionUs - subtitleShiftUs).coerceAtLeast(0L), elapsedRealtimeUs)
+                        }
+                    }
+                }
+            }
+        }
+        val p = ExoPlayer.Builder(activity, renderers).setMediaSourceFactory(DefaultMediaSourceFactory(PromoGuardFactory(http))).setLoadControl(load).build()
         p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
             .setPreferredAudioLanguage("ru").setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()   // субтитры выключены, пока не выбрали
         p.addListener(object : Player.Listener {
@@ -96,7 +116,7 @@ class NativePlayer(private val activity: Activity, private val root: FrameLayout
                 if (urlIdx + 1 < urlList.size) {   // например, телевизор не смог запустить видео VP9: пробуем следующий поток
                     urlIdx++
                     val pos = (player?.currentPosition ?: 0L)
-                    player?.setMediaItem(itemAt(urlIdx), pos); player?.prepare(); player?.playWhenReady = true
+                    player?.setMediaItem(itemAt(urlIdx), pos); player?.prepare()
                     js("window.npEvent && window.npEvent('fallback', " + urlIdx + ")")
                     return
                 }
@@ -112,7 +132,8 @@ class NativePlayer(private val activity: Activity, private val root: FrameLayout
         ensureView().player = p
         view?.visibility = android.view.View.VISIBLE
         p.setMediaItem(item, o.optLong("startMs", 0L))
-        p.prepare(); p.playWhenReady = true
+        p.playbackParameters = PlaybackParameters(o.optDouble("speed", 1.0).toFloat().coerceIn(0.25f, 4f))
+        p.prepare(); p.playWhenReady = o.optBoolean("playing", true)
         player = p
         handler.removeCallbacks(ticker); handler.post(ticker)
     }
@@ -142,6 +163,7 @@ class NativePlayer(private val activity: Activity, private val root: FrameLayout
             "seekTo" -> p.seekTo(arg.toLong())
             "seekBy" -> p.seekTo((p.currentPosition + arg.toLong()).coerceIn(0, if (p.duration > 0) p.duration else Long.MAX_VALUE))
             "speed" -> p.playbackParameters = PlaybackParameters(arg.toFloat())
+            "subtitleShift" -> { subtitleShiftUs = (arg.coerceIn(-30000.0, 30000.0) * 1000).toLong(); p.seekTo((p.currentPosition + 1).coerceAtMost(if (p.duration > 0) p.duration else Long.MAX_VALUE)) }
         }
         push()
     }

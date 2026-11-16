@@ -48,10 +48,10 @@ async function renderPerson(r, t) {
   const modes = [];
   if (credits) { if (credits.actor.length) modes.push(['actor', 'Фильмография']); if (credits.director.length) modes.push(['director', 'Режиссёр']); }
   const bio = (p.bio || '').replace(/^[^\wА-Яа-яЁё]+/, '');
-  view.innerHTML = `<div class="page"><div class="phead"><div class="pphoto">${photo ? `<img src="${esc(photo)}" alt="">` : `<span>${esc((p.name || '?')[0])}</span>`}</div>
-    <div class="pinfo"><div class="ty">${esc(roles.join(' · ') || 'Персона')}</div><h1 class="pname">${esc(p.name)}</h1>
+  view.innerHTML = `<div class="page person-page"><div class="phead"><div class="pphoto">${photo ? `<img src="${esc(photo)}" alt="">` : `<span>${esc((p.name || '?')[0])}</span>`}</div>
+    <div class="pinfo"><div class="person-kicker">${esc(roles.join(' · ') || 'Персона')}</div><h1 class="pname">${esc(p.name)}</h1>
     <div class="meta">${p.birthday ? `<span>${esc(ageText(p.birthday, p.deathday))}</span>` : ''}${p.place ? `<span>•</span><span>${esc(p.place)}</span>` : ''}</div>
-    ${bio ? `<div class="blk f pbio" tabindex="-1" data-k="bio" data-act="bio">${esc(bio)}</div>` : ''}</div></div><div id="pBody"></div></div>`;
+    ${bio ? `<div class="blk f pbio" role="button" aria-expanded="false" aria-label="Биография: раскрыть или свернуть" tabindex="-1" data-k="bio" data-act="bio"><span class="pbio-text">${esc(bio)}</span></div>` : ''}</div></div><div id="pBody"></div></div>`;
   const body = $('#pBody');
   if (!credits) {
     const cnt = p.counts ? `<p style="margin-top:8px;color:var(--muted)">В базе: ${p.counts.actor} ${plural(p.counts.actor, 'роль', 'роли', 'ролей')} и ${p.counts.director} ${plural(p.counts.director, 'режиссёрская работа', 'режиссёрские работы', 'режиссёрских работ')}.</p>` : '';
@@ -60,15 +60,17 @@ async function renderPerson(r, t) {
   }
   const found = { actor: [], director: [] }, checked = { actor: 0, director: 0 }, started = {};
   let mode = modes[0]?.[0] || 'actor', kind = 'all';
-  body.innerHTML = `<div class="chips pfilters">${modes.length > 1 ? modes.map(([k, l]) => `<button class="chip f ${k === mode ? 'on' : ''}" tabindex="-1" data-pmode="${k}" data-k="pm:${k}">${l} (${credits[k].length})</button>`).join('') : ''}
-    ${[['all', 'Всё'], ['film', 'Фильмы'], ['tv', 'Сериалы']].map(([k, l]) => `<button class="chip f ${k === kind ? 'on' : ''}" tabindex="-1" data-pkind="${k}" data-k="pk:${k}">${l}</button>`).join('')}</div>
+  body.innerHTML = `<div class="person-section-head"><div><span class="person-kicker">РАБОТЫ</span><h2>Фильмография</h2></div></div><div class="chips pfilters">${modes.length > 1 ? `<div class="person-filter-group">${modes.map(([k, l]) => `<button class="chip f ${k === mode ? 'on' : ''}" tabindex="-1" data-pmode="${k}" data-k="pm:${k}" aria-pressed="${k === mode}">${l} (${credits[k].length})</button>`).join('')}</div>` : ''}
+    <div class="person-filter-group person-filter-kind"><span>Тип</span>${[['all', 'Всё'], ['film', 'Фильмы'], ['tv', 'Сериалы']].map(([k, l]) => `<button class="chip f ${k === kind ? 'on' : ''}" tabindex="-1" data-pkind="${k}" data-k="pk:${k}" aria-pressed="${k === kind}">${l}</button>`).join('')}</div></div>
     <p class="lprog" id="pProg"></p><div class="grid" id="pGrid"></div>`;
   const grid = $('#pGrid'), prog = $('#pProg');
   const isTv = (x) => [3, 4, 5, 7].includes(x.type);
   const paint = () => {
+    const focusKey = grid.contains(document.activeElement) ? document.activeElement.dataset.k : null;
     const list = found[mode].filter((x) => kind === 'all' || (kind === 'tv') === isTv(x));
-    grid.innerHTML = list.map((it) => cardHTML(it, 'p:' + it.id)).join('') || (checked[mode] >= credits[mode].length ? '<div class="empty" style="grid-column:1/-1"><b>В Luma пока ничего нет</b>Загляните позже</div>' : '<div class="empty" style="grid-column:1/-1"><div class="spin"></div></div>');
+    grid.innerHTML = list.map((it) => cardHTML(it, 'p:' + it.id)).join('') || (checked[mode] >= credits[mode].length ? (found[mode].length && kind!=='all'?'<div class="empty" style="grid-column:1/-1"><b>В этой категории ничего не найдено</b>Выберите другой фильтр</div>':'<div class="empty" style="grid-column:1/-1"><b>В Luma пока ничего нет</b>Загляните позже</div>') : '<div class="empty" style="grid-column:1/-1"><div class="spin"></div></div>');
     hookImages(grid);
+    if(focusKey){const target=[...grid.querySelectorAll('.f')].find(x=>x.dataset.k===focusKey);target?.focus({preventScroll:true});}
     const total = credits[mode].length;
     prog.textContent = checked[mode] < total ? `Ищем в Luma… проверено ${checked[mode]} из ${total}, нашли ${found[mode].length}` : `В Luma есть ${found[mode].length} из ${total}`;
   };
@@ -77,15 +79,15 @@ async function renderPerson(r, t) {
     const list = credits[m];
     for (let i = 0; i < list.length; i += 8) {
       const part = list.slice(i, i + 8);
-      const got = await Promise.all(part.map((x) => tmMatchCached(x, x.media_type === 'tv' ? 'tv' : 'movie')));
+      const got = await Promise.all(part.map((x) => tmMatchCached(x, x.media_type === 'tv' ? 'tv' : 'movie').catch(()=>null)));
       if (!alive(t)) return;
-      found[m].push(...got.filter(Boolean));
+      const ids=new Set(found[m].map(x=>String(x.id)));for(const item of got){if(!item||ids.has(String(item.id)))continue;ids.add(String(item.id));found[m].push(item);}
       checked[m] = Math.min(list.length, i + 8);
       if (mode === m) { const had = grid.children.length; paint(); if (!had && found[m].length) focusFirstIn(grid); }
     }
     checked[m] = list.length; if (mode === m) paint();
   }
-  window.__pn = { setMode: (m) => { mode = m; $$('[data-pmode]').forEach((b) => b.classList.toggle('on', b.dataset.pmode === m)); paint(); run(m); }, setKind: (k) => { kind = k; $$('[data-pkind]').forEach((b) => b.classList.toggle('on', b.dataset.pkind === k)); paint(); } };
+  window.__pn = { setMode: (m) => { mode = m; $$('[data-pmode]').forEach((b) => { const on=b.dataset.pmode===m;b.classList.toggle('on',on);b.setAttribute('aria-pressed',String(on)); }); paint(); run(m); }, setKind: (k) => { kind = k; $$('[data-pkind]').forEach((b) => { const on=b.dataset.pkind===k;b.classList.toggle('on',on);b.setAttribute('aria-pressed',String(on)); }); paint(); } };
   paint(); run(mode);
   focusFirst();
 }
@@ -95,7 +97,7 @@ document.addEventListener('click', (e) => {
   const el = e.target.closest('.f'); if (!el || route.name !== 'person') return;
   if (el.dataset.pmode) window.__pn.setMode(el.dataset.pmode);
   else if (el.dataset.pkind) window.__pn.setKind(el.dataset.pkind);
-  else if (el.dataset.act === 'bio') el.classList.toggle('open');
+  else if (el.dataset.act === 'bio') { el.classList.toggle('open'); el.setAttribute('aria-expanded',String(el.classList.contains('open'))); }
 });
 window.RENDER.person = renderPerson;
 

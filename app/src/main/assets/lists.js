@@ -18,6 +18,8 @@ const lsPut = (k, v) => { lsCache.set(k, { t: Date.now(), v }); return v; };
 const lsSecret = (n) => (S.secrets && S.secrets[n]) || '';
 const savedLists = () => (tvX().lists = tvX().lists || []);
 const isListSaved = (url) => savedLists().some((l) => l.url === url);
+const listSavedAt = url => Math.max(Date.now(), Number(S.gone?.['l:'+url]||0)+1);
+function markListRemoved(url){const at=Number(savedLists().find(x=>x.url===url)?.at||0);S.gone||={};S.gone['l:'+url]=Math.max(Date.now(),at+1,Number(S.gone['l:'+url]||0)+1);}
 
 /* ---------- перевод запроса на английский ---------- */
 const CYR = /[А-Яа-яЁё]/;
@@ -185,7 +187,7 @@ async function lsRu(s) {
 }
 const lsEnh = { q: [], busy: 0 };
 function lsEnhance(root) {
-  $$('.lc[data-list]:not([data-enh])', root).forEach((c) => { c.dataset.enh = '1'; lsEnh.q.push(c); });
+  $$('.lc[data-list]:not([data-enh])', root).forEach((c) => { c.dataset.enh = '1'; if(!String(c.dataset.list).startsWith('animeon:'))lsEnh.q.push(c); });
   lsPump();
 }
 function lsPump() {
@@ -229,48 +231,58 @@ document.addEventListener('focusin', (e) => {
 new MutationObserver(() => { if (route.name === 'lists') lsEnhance(view); }).observe(document.getElementById('view') || document.body, { childList: true, subtree: true });
 
 /* ---------- экраны ---------- */
-const LS_SRC = { letterboxd: 'Letterboxd', mdblist: 'MDBList', trakt: 'Trakt' };
+const LS_SRC = { letterboxd: 'Letterboxd', mdblist: 'MDBList', trakt: 'Trakt', animeon:'AnimeOn' };
+let lsLastQuery = '';
 const srcOfList = (l) => l.source || (String(l.url).startsWith('md:') ? 'mdblist' : String(l.url).startsWith('tr:') ? 'trakt' : 'letterboxd');
+const aoListSummary = c => ({url:'animeon:'+c.slug,source:'animeon',title:c.title,author:c.author||'',count:Number(c.count)||0,desc:c.desc||'',names:(c.covers||[]).map(x=>x.title).filter(Boolean).slice(0,3)});
 function listCard(l, key) {
   return `<div class="lc f" tabindex="-1" data-list="${esc(l.url)}" data-k="${esc(key)}"><span class="src ${srcOfList(l)}">${LS_SRC[srcOfList(l)] || ''}</span><b>${esc(l.title)}</b>
-    <small>${esc([l.author, l.count ? l.count + ' ' + plural(l.count, 'фильм', 'фильма', 'фильмов') : ''].filter(Boolean).join(' · '))}</small>${(l.names || []).length ? `<em>${esc(l.names.slice(0, 3).join(' · '))}</em>` : l.desc ? `<em>${esc(l.desc.slice(0, 90))}</em>` : ''}</div>`;
+    <small>${esc([l.author, l.count ? l.count + ' ' + (srcOfList(l)==='animeon'?plural(l.count,'тайтл','тайтла','тайтлов'):plural(l.count, 'фильм', 'фильма', 'фильмов')) : ''].filter(Boolean).join(' · '))}</small>${(l.names || []).length ? `<em>${esc(l.names.slice(0, 3).join(' · '))}</em>` : l.desc ? `<em>${esc(l.desc.slice(0, 90))}</em>` : ''}</div>`;
 }
 const lsRow = (id, title, lists, pre) => lists.length ? `<section class="sec" id="${id}"><h2>${esc(title)}</h2><div class="track">${lists.map((l, i) => listCard(l, pre + i)).join('')}</div></section>` : '';
 
 async function renderLists(r, t) {
   const saved = savedLists();
-  view.innerHTML = `<div class="page"><div class="search"><input id="lq" class="f" tabindex="-1" data-k="lq" placeholder="Найти подборку (например: ужасы, Хэллоуин, лучшие фильмы)" autocomplete="off" enterkeyhint="search"></div>
-    <div id="lres"></div><div id="ltop"><div class="empty" style="padding:50px"><div class="spin"></div></div></div></div>`;
+  view.innerHTML = `<div class="page tv-catalog-page tv-lists-page">${tvCatalogHeader('Подборки','Сохранённые списки, популярные темы и подборки сообщества.','ВАША БИБЛИОТЕКА')}<div class="search tv-lists-search"><input id="lq" class="f" tabindex="-1" data-k="lq" placeholder="Найти подборку (например: ужасы, Хэллоуин, лучшие фильмы)" autocomplete="off" enterkeyhint="search"></div><div class="chips filters tv-catalog-toolbar"><button class="chip f" tabindex="-1" data-ls-animeon="1" data-k="lists:animeon">Сообщество AnimeOn ›</button></div>
+    <div id="lres"></div><div id="ltop"><div id="lsSavedNow">${lsRow('lsSaved', 'Сохранённые', saved, 'sv')}</div><div id="lsPopular"><div class="empty" style="padding:50px"><div class="spin"></div></div></div></div></div>`;
   const q = $('#lq');
+  // Не открываем системную клавиатуру при входе в каталог: поиск доступен стрелкой вверх.
+  $('[data-ls-animeon]')?.focus({preventScroll:true});
   let seq = 0;
   const run = async () => {
     const text = q.value.trim(), my = ++seq;
     if (text.length < 2) { $('#lres').innerHTML = ''; $('#ltop').style.display = ''; return false; }
     $('#ltop').style.display = 'none'; $('#lres').innerHTML = '<div class="empty" style="padding:50px"><div class="spin"></div></div>';
-    const query = await toEnglish(text);
+    const query = lsSecret('mdblist') || lsSecret('trakt') ? await toEnglish(text) : text;
     const jobs = {};
+    if (typeof aoCall === 'function') jobs.animeon = async () => {const r=await aoCall('collections',{query:text,page:1});if(r.error)throw lsErr('NETWORK');return (r.items||[]).map(aoListSummary);};
     if (lsSecret('mdblist')) jobs.mdblist = async () => (await mdb('/lists/search', { query, limit: 40 })).filter((l) => !l.private).map(mdSummary);
     if (lsSecret('trakt')) jobs.trakt = async () => (await trakt('/search/list', { query, limit: 40 })).json.map((x) => x.list).filter((l) => l && l.privacy !== 'private' && l.ids?.trakt).map(trSummary);
     const out = {}, errs = {};
     await Promise.all(Object.entries(jobs).map(async ([k, fn]) => { try { out[k] = await fn(); } catch (e) { errs[k] = e.code || 'NETWORK'; } }));
     if (my !== seq || !alive(t)) return false;
-    const a = out.mdblist || [], b = out.trakt || [], lists = [];
-    for (let i = 0; i < Math.max(a.length, b.length); i++) { if (a[i]) lists.push(a[i]); if (b[i]) lists.push(b[i]); }
-    $('#lres').innerHTML = lists.length ? `<h3 class="ph3" style="padding:0 48px">${query.toLowerCase() !== text.toLowerCase() ? `Ищем «${esc(query)}»` : 'Найдено'}</h3><div class="grid lgrid">${lists.map((l, i) => listCard(l, 'sr' + i)).join('')}</div>` : `<div class="empty"><b>Ничего не нашли</b>${Object.values(errs).length ? esc(LS_ERR[Object.values(errs)[0]] || '') : (Object.keys(jobs).length ? 'Попробуйте другой запрос' : esc(LS_ERR.NO_KEY))}</div>`;
+    const a = out.mdblist || [], b = out.trakt || [], c=out.animeon||[], lists = [];
+    for (let i = 0; i < Math.max(a.length, b.length,c.length); i++) { if (c[i]) lists.push(c[i]); if (a[i]) lists.push(a[i]); if (b[i]) lists.push(b[i]); }
+    $('#lres').innerHTML = lists.length ? `<h3 class="ph3" style="padding:0 48px">${query.toLowerCase() !== text.toLowerCase() ? `Найдено по запросам «${esc(text)}» и «${esc(query)}»` : 'Найдено'}</h3><div class="grid lgrid">${lists.map((l, i) => listCard(l, 'sr' + i)).join('')}</div>` : `<div class="empty"><b>Ничего не нашли</b>${Object.values(errs).length ? esc(LS_ERR[Object.values(errs)[0]] || '') : (Object.keys(jobs).length ? 'Попробуйте другой запрос' : esc(LS_ERR.NO_KEY))}</div>`;
     return lists.length > 0;
   };
-  q.onkeydown = async (e) => { if (e.key !== 'Enter') return; e.preventDefault(); const ok = await run(); q.blur(); if (ok) setTimeout(() => $('#lres .lc')?.focus({ preventScroll: true }), 150); };
-  q.oninput = () => { if (!q.value.trim()) run(); };
+  q.value=lsLastQuery;
+  q.onkeydown = async (e) => { if (e.key !== 'Enter') return; e.preventDefault(); lsLastQuery=q.value;const ok = await run(); q.blur(); if (ok) setTimeout(() => $('#lres .lc')?.focus({ preventScroll: true }), 150); };
+  q.oninput = () => { lsLastQuery=q.value;if (!q.value.trim()) run(); };
+  if(q.value.trim().length>=2)void run();
   // сохранённые и топы источников
   const jobs = { letterboxd: lbPopular };
+  if(typeof aoCall==='function')jobs.animeon=async()=>{const r=await aoCall('collections',{page:1,sort:'popular'});if(r.error)throw lsErr('NETWORK');return (r.items||[]).map(aoListSummary);};
   if (lsSecret('mdblist')) jobs.mdblist = async () => (await mdb('/lists/top', { limit: 30 })).filter((l) => !l.private).map(mdSummary);
   if (lsSecret('trakt')) jobs.trakt = async () => (await trakt('/lists/popular', { limit: 30 })).json.map((x) => x.list).filter((l) => l?.ids?.trakt).map(trSummary);
-  const res = {};
-  await Promise.all(Object.entries(jobs).map(async ([k, fn]) => { try { res[k] = await fn(); } catch { res[k] = []; } }));
-  if (!alive(t)) return;
-  const html = lsRow('lsSaved', 'Сохранённые', saved, 'sv') + lsRow('lsMd', 'MDBList · популярные', res.mdblist || [], 'md') + lsRow('lsTr', 'Trakt · популярные', res.trakt || [], 'tr') + lsRow('lsLb', 'Letterboxd · популярные', res.letterboxd || [], 'lb');
-  $('#ltop').innerHTML = html || '<div class="empty"><b>Подборки не загрузились</b>Проверьте интернет</div>';
-  focusFirst();
+  const popular=$('#lsPopular');if(popular)popular.innerHTML='<div id="lsAoSlot"></div><div id="lsMdSlot"></div><div id="lsTrSlot"></div><div id="lsLbSlot"></div><div id="lsPopularStatus"><div class="empty" style="padding:50px"><div class="spin"></div></div></div>';
+  const res = {}, slots={animeon:['lsAoSlot','lsAo','AnimeOn · подборки сообщества','ao'],mdblist:['lsMdSlot','lsMd','MDBList · популярные','md'],trakt:['lsTrSlot','lsTr','Trakt · популярные','tr'],letterboxd:['lsLbSlot','lsLb','Letterboxd · популярные','lb']};let completed=0;
+  await Promise.all(Object.entries(jobs).map(async ([k, fn]) => {
+    try { res[k] = await fn(); } catch { res[k] = []; }
+    completed++;if(!alive(t))return;
+    const [slot,id,title,prefix]=slots[k],target=document.getElementById(slot);if(target)target.innerHTML=lsRow(id,title,res[k],prefix);
+    const status=$('#lsPopularStatus');if(status&&Object.values(res).some(x=>x.length))status.innerHTML='';else if(status&&completed===Object.keys(jobs).length)status.innerHTML=saved.length?'':'<div class="empty"><b>Подборки не загрузились</b>Проверьте интернет</div>';
+  }));
 }
 
 async function renderList(r, t) {
@@ -278,12 +290,12 @@ async function renderList(r, t) {
   let L;
   try { L = await getList(r.ref); } catch (e) { if (alive(t)) view.innerHTML = `<div class="empty"><b>Не получилось открыть подборку</b>${esc(LS_ERR[e.code] || 'Проверьте интернет и попробуйте ещё раз')}</div>`; return; }
   if (!alive(t)) return;
-  const found = [], total = L.films.length;
-  view.innerHTML = `<div class="page"><div class="lhead"><div class="ty">${esc(LS_SRC[srcOfList(L)] || '')}</div><h1 class="pname">${esc(L.title)}</h1>
-    <div class="meta"><span>${esc(L.author || '')}</span><span>•</span><span>${L.count || total} ${plural(L.count || total, 'фильм', 'фильма', 'фильмов')}</span></div>
-    ${L.desc ? `<p class="ldesc">${esc(L.desc)}</p>` : ''}
-    <div class="btns"><button class="btn f ${isListSaved(L.url) ? 'on' : ''}" tabindex="-1" data-lsave="${esc(L.url)}" data-k="lsave">${ico('heart')}<span>${isListSaved(L.url) ? 'В сохранённых' : 'Сохранить'}</span></button></div></div>
-    <p class="lprog" id="lprog"></p><div class="grid" id="lgrid"></div></div>`;
+  const found = [], missing = [], total = L.films.length;
+  view.innerHTML = `<div class="page"><div class="lhead tv-collection-head"><div class="tv-collection-copy"><div class="person-kicker">ПОДБОРКА · ${esc(LS_SRC[srcOfList(L)] || '')}</div><h1 class="pname">${esc(L.title)}</h1>
+    <div class="meta">${L.author?`<span>от ${esc(L.author)}</span><span>·</span>`:''}<span>${L.count || total} ${plural(L.count || total, 'фильм', 'фильма', 'фильмов')}</span></div>
+    ${L.desc ? `<div class="tv-collection-description"><p class="ldesc">${esc(L.desc)}</p>${L.desc.length>140?'<button class="chip f tv-collection-more" tabindex="-1" data-collection-more="1" data-k="collection:more" aria-expanded="false">Читать полностью</button>':''}</div>` : ''}</div>
+    <div class="btns tv-collection-actions"><button class="btn f ${isListSaved(L.url) ? 'on' : ''}" tabindex="-1" data-lsave="${esc(L.url)}" data-k="lsave">${ico('heart')}<span>${isListSaved(L.url) ? 'В сохранённых' : 'Сохранить'}</span></button></div></div>
+    <p class="lprog" id="lprog"></p><div class="grid" id="lgrid"></div><div id="lMissing"></div></div>`;
   window.__ls = { L };
   const grid = $('#lgrid'), prog = $('#lprog');
   const paint = (done) => { prog.textContent = done >= total ? `В Luma есть ${found.length} из ${total}` : `Ищем в Luma… проверено ${done} из ${total}, нашли ${found.length}`; };
@@ -293,6 +305,7 @@ async function renderList(r, t) {
     const part = L.films.slice(i, i + 8);
     const got = await Promise.all(part.map(matchFilm));
     if (!alive(t)) return;
+    got.forEach((item,index)=>{if(!item)missing.push(part[index]);});
     const add = got.filter(Boolean).filter((x) => !found.some((y) => y.id === x.id));
     found.push(...add); done = Math.min(total, i + 8);
     if (add.length) { grid.insertAdjacentHTML('beforeend', add.map((it) => cardHTML(it, 'l:' + it.id)).join('')); hookImages(grid); if (found.length === add.length && (document.activeElement === document.body || document.activeElement.dataset?.k === 'lsave')) {} }
@@ -300,14 +313,20 @@ async function renderList(r, t) {
   }
   paint(total);
   if (!found.length) grid.outerHTML = '<div class="empty"><b>В Luma пока ничего нет</b>Загляните позже</div>';
+  if(missing.length){
+    const box=$('#lMissing');box.innerHTML=`<section class="sec list-missing"><button class="btn f" tabindex="-1" data-list-missing="1" data-k="list:missing" aria-expanded="false">Не удалось найти в Luma · ${missing.length} ▾</button><div class="list-missing-items hidden">${missing.map(f=>`<div>${esc(f.title||'Без названия')}${f.year?' · '+esc(f.year):''}</div>`).join('')}</div><p class="sub">Совпадения могут появиться позже или не определиться из-за названия.</p></section>`;
+    const toggle=box.querySelector('[data-list-missing]');toggle.onclick=()=>{const open=toggle.getAttribute('aria-expanded')!=='true';toggle.setAttribute('aria-expanded',String(open));toggle.innerHTML=`Не удалось найти в Luma · ${missing.length} ${open?'▴':'▾'}`;box.querySelector('.list-missing-items').classList.toggle('hidden',!open);};
+  }
 }
 
 document.addEventListener('click', (e) => {
   const el = e.target.closest('.f'); if (!el) return;
-  if (el.dataset.list && route.name !== 'list') { go('list', { ref: el.dataset.list }); return; }
+  if (el.dataset.collectionMore) { const box=el.closest('.tv-collection-description'),open=el.getAttribute('aria-expanded')!=='true';box.classList.toggle('open',open);el.setAttribute('aria-expanded',String(open));el.textContent=open?'Свернуть':'Читать полностью';return; }
+  if (el.dataset.lsAnimeon && route.name==='lists') {go('animeCollections',{page:1});return;}
+  if (el.dataset.list && route.name !== 'list') { if(el.dataset.list.startsWith('animeon:'))go('animeCollection',{slug:el.dataset.list.slice(8)});else go('list', { ref: el.dataset.list }); return; }
   if (el.dataset.lsave && route.name === 'list') {
     const L = window.__ls.L, a = savedLists(), i = a.findIndex((x) => x.url === L.url);
-    if (i >= 0) a.splice(i, 1); else a.unshift({ url: L.url, source: srcOfList(L), title: L.title, author: L.author, count: L.count, desc: (L.desc || '').slice(0, 160), names: L.names || [] });
+    if (i >= 0) {markListRemoved(L.url);a.splice(i, 1);} else a.unshift({ url: L.url, source: srcOfList(L), title: L.title, author: L.author, count: L.count, desc: (L.desc || '').slice(0, 160), names: L.names || [],at:listSavedAt(L.url) });
     save(); const on = i < 0; el.classList.toggle('on', on); el.querySelector('span').textContent = on ? 'В сохранённых' : 'Сохранить'; toast(on ? 'Подборка сохранена' : 'Подборка убрана');
   }
 });

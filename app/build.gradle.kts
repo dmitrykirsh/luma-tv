@@ -13,13 +13,14 @@ val syncProps = Properties().apply { val f = rootProject.file("../sync-credentia
 android {
     namespace = "ws.luma.tv"
     compileSdk = 34
+    packaging { jniLibs { useLegacyPackaging = true } }
     buildFeatures { buildConfig = true }
     defaultConfig {
         applicationId = "ws.luma.tv"
         minSdk = 24
         targetSdk = 34
-        versionCode = 133
-        versionName = "1.2.0"
+        versionCode = 134
+        versionName = "1.2.1"
         buildConfigField("String", "DRIVE_CLIENT_ID", "\"${syncProps.getProperty("driveClientId", "")}\"")
         buildConfigField("String", "DRIVE_CLIENT_SECRET", "\"${syncProps.getProperty("driveClientSecret", "")}\"")
         buildConfigField("String", "DRIVE_DESK_ID", "\"${syncProps.getProperty("driveDesktopClientId", "")}\"")
@@ -34,6 +35,11 @@ android {
         }
     }
     buildTypes {
+        getByName("debug") {
+            if (providers.gradleProperty("codexTest").orNull == "true") {
+                applicationIdSuffix = ".codextest"
+            }
+        }
         release {
             isMinifyEnabled = false
             signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")

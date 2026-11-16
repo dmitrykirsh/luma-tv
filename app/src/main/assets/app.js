@@ -6,16 +6,33 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const NATIVE = typeof Native !== 'undefined' ? Native : null;
 
+// Only the main Luma origin can access this channel; embedded players cannot read credentials.
+let aoSecretCache='', aoSecretSeq=0; const aoSecretPending=new Map();
+function aoSecretCall(action,value='') { return new Promise(resolve=>{
+  if(!window.LumaAnimeOnSecret) return resolve(null);
+  const id=++aoSecretSeq, timer=setTimeout(()=>{aoSecretPending.delete(id);resolve(null)},5000);
+  aoSecretPending.set(id,v=>{clearTimeout(timer);resolve(v)});
+  window.LumaAnimeOnSecret.postMessage(JSON.stringify({id,action,value}));
+}); }
+if(window.LumaAnimeOnSecret) window.LumaAnimeOnSecret.onmessage=e=>{try{const m=JSON.parse(e.data),cb=aoSecretPending.get(m.id);if(cb){aoSecretPending.delete(m.id);cb(m.value)}}catch{}};
+async function aoRefreshSecret(force=false){const value=await aoSecretCall('get');if(typeof value==='string'){const current=aoSecretCache;let c=0,n=0;try{c=JSON.parse(current).updatedAt||0}catch{}try{n=JSON.parse(value).updatedAt||0}catch{}if(force||n>=c)aoSecretCache=value;}return aoSecretCache;}
+function aoAdoptSecret(value){let next,cur;try{next=JSON.parse(value);cur=JSON.parse(aoSecretCache||'{}')}catch{return;}if(!Number.isSafeInteger(next.updatedAt)||next.updatedAt<=Number(cur.updatedAt||0))return;aoSecretCache=value;aoSecretCall('adopt',value).then(ok=>aoRefreshSecret(ok!==true));}
+setTimeout(()=>aoRefreshSecret().then(()=>{if(typeof syServe==='function')syServe();}),0);
+
 const ICONS = {
   home: '<path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
   film: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>',
   tv: '<rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/>',
   cartoon: '<circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2.5 4 2.5S16 14 16 14M9 9.5h.01M15 9.5h.01"/>',
-  anime: '<path d="M12 3l2.2 5.3L20 9l-4.3 3.9L17 19l-5-3-5 3 1.3-6.1L4 9l5.8-.7z"/>',
+  anime: '<path d="M4.2 12.2V10a7.8 7.8 0 0 1 15.6 0v2.2M4.2 10.8c1.7-.1 3-1.4 3.8-3.6 1.1 2.1 3 3.2 5.3 3.4-1-1-1.5-2.1-1.6-3.5 1.2 2.4 3.8 3.7 8.1 3.7M5.3 10.6v3.5c0 3 2.6 5.5 6.7 7 4.1-1.5 6.7-4 6.7-7v-3.5M4.3 12.4c-1.2 1.8-1.1 4 .2 5.7M19.7 12.4c1.2 1.8 1.1 4-.2 5.7M8 12.6c.7-.7 1.8-.7 2.5 0M13.5 12.6c.7-.7 1.8-.7 2.5 0M9.2 13.4v.7M14.8 13.4v.7M10.5 17c1 .5 2 .5 3 0"/>',
+  sport: '<circle cx="12" cy="12" r="9"/><path d="M12 7l-3 2 1 4h4l1-4-3-2zM4 10l5-1M6 19l4-6M18 19l-4-6M20 10l-5-1"/>',
   show: '<path d="M4 8h16v11H4zM8 4l4 4 4-4"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
   heart: '<path d="M12 20s-7-4.4-9-9.2C1.8 7.4 4 4 7.3 4c1.9 0 3.4 1 4.7 2.8C13.3 5 14.8 4 16.7 4 20 4 22.2 7.4 21 10.8 19 15.6 12 20 12 20z"/>',
   play: '<path d="M7 4.5v15l13-7.5z"/>',
+  animePlayer: '<path d="M12 2.5l2.3 5 5.5.7-4.1 3.8.9 5.4-4.6-2.5-4.6 2.5.9-5.4-4.1-3.8 5.5-.7z"/><path d="M10.5 9v3.8l3-1.9z"/>',
+  reservePlayer: '<rect x="3" y="6" width="15" height="12" rx="2"/><path d="M7 3h12a2 2 0 0 1 2 2v10M9 9v6l5-3z"/>',
+  rutubePlayer: '<rect x="3" y="5" width="18" height="14" rx="4"/><path d="M10 9v6l5-3zM8 22h8"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
   live: '<rect x="3" y="7" width="18" height="13" rx="2.5"/><path d="M8 3l4 3.5L16 3"/><circle cx="12" cy="13.5" r="2.2"/>',
@@ -24,9 +41,11 @@ const ICONS = {
   key: '<circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l3 3M14 9l2 2"/>',
   trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12M9 7V4h6v3"/>',
   refresh: '<path d="M20 12a8 8 0 1 1-2.5-5.8M20 4v5h-5"/>',
+  bell: '<path d="M18 8a6 6 0 0 0-12 0c0 7-2 7-2 9h16c0-2-2-2-2-9M10 20h4"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
   restart: '<path d="M4 12a8 8 0 1 1 2.5 5.8M4 20v-5h5"/>',
   magnet: '<path d="M6 3v8a6 6 0 0 0 12 0V3"/><path d="M9.5 3v8a2.5 2.5 0 0 0 5 0V3"/>',
+  torrent: '<circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/><path d="M7 6h10M5 8v8M19 8v8M7 18h2M15 18h2M12 7v9m-3-3 3 3 3-3"/>',
   plus: '<path d="M12 5v14M5 12h14"/>'
 };
 const ico = (n) => `<svg viewBox="0 0 24 24">${ICONS[n]}</svg>`;
@@ -41,7 +60,7 @@ const SECTIONS = {
   tvshows: { title: 'ТВ-шоу', cat: 'tvshows' }
 };
 const SORTS = [['popular', 'Популярное'], ['new', 'Новинки'], ['kp', 'По Кинопоиску'], ['imdb', 'По IMDb']];
-const TABS = [['home', 'Главная', 'home'], ['films', 'Фильмы', 'film'], ['series', 'Сериалы', 'tv'], ['cartoons', 'Мультфильмы', 'cartoon'], ['anime', 'Аниме', 'anime'], ['tvshows', 'ТВ-шоу', 'show'], ['tv', 'Каналы', 'live'], ['lists', 'Подборки', 'list'], ['mine', 'Моё', 'heart']];
+const TABS = [['home', 'Главная', 'home'], ['films', 'Фильмы', 'film'], ['series', 'Сериалы', 'tv'], ['cartoons', 'Мультфильмы', 'cartoon'], ['anime', 'Аниме', 'anime'], ['tvshows', 'ТВ-шоу', 'show'], ['tv', 'Каналы', 'live'], ['sport', 'Спорт', 'sport'], ['lists', 'Подборки', 'list'], ['mine', 'Моё', 'heart']];
 const RAIL = 96;   // ширина свёрнутого левого меню, px сцены
 
 /* ================= сцена: масштаб под экран ================= */
@@ -60,13 +79,14 @@ let S = { favs: [], history: [], progress: {}, seen: {}, secrets: {}, extra: {} 
 try { S = { ...S, ...JSON.parse(localStorage.getItem(LS) || '{}') }; } catch {}
 let saveT = 0;
 const save = () => { clearTimeout(saveT); saveT = setTimeout(() => { try { localStorage.setItem(LS, JSON.stringify(S)); } catch {} try { if (S.group && NATIVE && NATIVE.syncUpdate) NATIVE.syncUpdate(exportJson()); } catch {} feedPublish(); }, 300); };
-const uniq = (list, key) => { const m = new Map(); for (const x of list) if (x && x[key] != null && !m.has(x[key])) m.set(x[key], x); return [...m.values()]; };
+const mergeFavorites = list => {const m=new Map();for(const x of list)if(x&&x.id!=null){const id=String(x.id),old=m.get(id);if(!old||Number(x.at||0)>Number(old.at||0))m.set(id,x);}return [...m.values()];};
+const mergeSavedLists = list => {const m=new Map();for(const x of list)if(x&&x.url){const old=m.get(x.url);if(!old||Number(x.at||0)>Number(old.at||0))m.set(x.url,x);}return [...m.values()];};
 
 function mergeBackup(b) {
   const d = b.data || {};
-  S.favs = uniq([...(S.favs || []), ...(d.favs || [])], 'id');
+  S.favs = mergeFavorites([...(S.favs || []), ...(d.favs || [])]);
   const m = new Map();
-  for (const x of [...(S.history || []), ...(d.history || [])]) { const o = m.get(x.id); if (!o || (x.ts || 0) > (o.ts || 0)) m.set(x.id, x); }
+  for (const x of [...(S.history || []), ...(d.history || [])]) { if(!x||x.id==null)continue;const id=String(x.id),o = m.get(id); if (!o || (x.ts || 0) > (o.ts || 0)) m.set(id, x); }
   S.history = [...m.values()].sort((a, b2) => (b2.ts || 0) - (a.ts || 0)).slice(0, 60);
   S.gone = S.gone || {};
   for (const [gk, gts] of Object.entries(d.gone || {})) if (gts > (S.gone[gk] || 0)) S.gone[gk] = gts;   // отметки об удалении: удалённое на одном устройстве не возвращается с другого
@@ -78,11 +98,27 @@ function mergeBackup(b) {
   for (const [k, arr] of Object.entries(d.seen || {})) S.seen[k] = [...new Set([...(S.seen[k] || []), ...arr])];
   S.progress = { ...(S.progress || {}) };
   for (const [k, p] of Object.entries(d.progress || {})) if (!S.progress[k] || (p.ts || 0) > (S.progress[k].ts || 0)) S.progress[k] = p;
-  S.secrets = { ...(S.secrets || {}), ...(b.secrets || {}) };
+  const incomingSecrets={ ...(b.secrets || {}) };
+  if (incomingSecrets.animeon) { if(window.LumaAnimeOnSecret) aoAdoptSecret(incomingSecrets.animeon); delete incomingSecrets.animeon; }
+  if (S.secrets?.animeon && window.LumaAnimeOnSecret) { aoAdoptSecret(S.secrets.animeon); delete S.secrets.animeon; }
+  S.secrets = { ...(S.secrets || {}), ...incomingSecrets };
   const x = (S.extra = S.extra || {});
-  if (d.lists) x.lists = uniq([...(x.lists || []), ...d.lists], 'url');
+  // Новые данные ПК сохраняем при обмене, даже если экран ТВ пока их не использует.
+  if (d.done && typeof d.done === 'object') { x.done = { ...(x.done || {}) }; for (const [id, arr] of Object.entries(d.done)) if (Array.isArray(arr)) x.done[id] = [...new Set([...(x.done[id] || []), ...arr])]; }
+  if(d.sourceHistory && typeof d.sourceHistory==='object'){x.sourceHistory={...(x.sourceHistory||{})};for(const [k,v] of Object.entries(d.sourceHistory))if(v&&(!x.sourceHistory[k]||Number(v.ts||0)>Number(x.sourceHistory[k].ts||0)))x.sourceHistory[k]=v;}
+  if (d.sportReminders && typeof d.sportReminders === 'object' && !Array.isArray(d.sportReminders)) { x.sportReminders = { ...(x.sportReminders || {}) }; for (const [id, item] of Object.entries(d.sportReminders)) if (item && typeof item === 'object' && !Array.isArray(item) && (!x.sportReminders[id] || Number(item.ts || 0) > Number(x.sportReminders[id].ts || 0))) x.sportReminders[id] = item; }
+  if (d.sportFollows && typeof d.sportFollows === 'object' && !Array.isArray(d.sportFollows)) { x.sportFollows = { ...(x.sportFollows || {}) }; for (const [id, item] of Object.entries(d.sportFollows)) if (item && typeof item === 'object' && !Array.isArray(item) && (!x.sportFollows[id] || Number(item.ts || 0) > Number(x.sportFollows[id].ts || 0))) x.sportFollows[id] = item; }
+  if (d.watchPrefs && typeof d.watchPrefs === 'object' && !Array.isArray(d.watchPrefs)) {
+    x.watchPrefs = { ...(x.watchPrefs || {}) };
+    for (const [id, pref] of Object.entries(d.watchPrefs)) if (pref && typeof pref === 'object' && !Array.isArray(pref) && (!x.watchPrefs[id] || Number(pref.ts || 0) > Number(x.watchPrefs[id].ts || 0))) x.watchPrefs[id] = pref;
+  }
+  if (d.playerVoicePrefs && typeof d.playerVoicePrefs === 'object' && !Array.isArray(d.playerVoicePrefs)) x.playerVoicePrefs = { ...(x.playerVoicePrefs || {}), ...d.playerVoicePrefs };
+  if (Array.isArray(d.trackedPremieres)) x.trackedPremieres = d.trackedPremieres;
+  if (d.lists) x.lists = mergeSavedLists([...(x.lists || []), ...d.lists]);
+  if (x.lists) x.lists = x.lists.filter(l=>!(S.gone['l:'+l.url]>Number(l.at||0)));
   if (d.tvFav) x.tvFav = [...new Set([...(x.tvFav || []), ...d.tvFav])];
   if (d.tvStats) { x.tvStats = x.tvStats || {}; for (const [id, st] of Object.entries(d.tvStats)) { const o = x.tvStats[id]; if (!o || (st.last || 0) > (o.last || 0)) x.tvStats[id] = { ...st, n: Math.max(st.n || 0, o?.n || 0), t: Math.max(st.t || 0, o?.t || 0) }; } }
+  if (d.tvEpgLinks && typeof d.tvEpgLinks === 'object' && !Array.isArray(d.tvEpgLinks)) { x.tvEpgLinks = x.tvEpgLinks || {}; for (const [id, link] of Object.entries(d.tvEpgLinks)) if (link && typeof link === 'object' && Number(link.ts || 0) > Number(x.tvEpgLinks[id]?.ts || 0)) x.tvEpgLinks[id] = link; }
   if (d.tvCustom) { const cur = x.tvCustom || []; x.tvCustom = [...cur, ...d.tvCustom.filter((e) => e && e.url && !cur.some((c) => c.url === e.url))]; }
   if (d.tvLast && !x.tvLast) x.tvLast = d.tvLast;
   S.imported = Date.now();
@@ -119,32 +155,57 @@ async function catalog({ cat = 'films', page = 1, limit = 20, sort = 'popular', 
   const r = await api('/list/categories?' + q);
   return Array.isArray(r) ? r : (r.items || []);
 }
-const info = (id) => api('/info/' + id, 600000);
+const info = async id => {
+  if (!String(id).startsWith('ao:')) return api('/info/' + id, 600000);
+  const c = await aoCall('info', String(id).slice(3));
+  if (!c) throw new Error('AnimeOn недоступен');
+  const firstVoice = c.voiceNames[0], firstLink = firstVoice && (c.voices[firstVoice][String(c.episodes[0] ?? 1)] || Object.values(c.voices[firstVoice])[0]);
+  const episodes=[...new Set([...(c.episodes||[]),...(c.selfHosted?.episodes||[])].map(Number).filter(x=>Number.isInteger(x)&&x>0))].sort((a,b)=>a-b);
+  const canonical=/\[(?:ТВ|TV)[-\s]*1\]/i.test(c.title||'')?c.franchise?.nodes?.find(x=>String(x.id)===String(c.franchise.currentId))?.name:'';
+  return {id:'ao:'+c.slug,type:c.type,name:canonical||c.title,origin_name:c.titleOrig,poster:c.poster,year:c.year,kp_rating:c.kpRating,imdb_rating:c.imdbRating,episodes:episodes.length ? {1:episodes} : {},iframe_uri:firstLink || '',parts:[],people:{},info:{description:c.description,genre:c.genres,time:c.duration ? c.duration+' мин.' : '',name_eng:c.titleOrig},_ao:c};
+};
 const search = async (q) => (await api('/search?q=' + encodeURIComponent(q), 60000)).items || [];
 
 /* ================= данные пользователя ================= */
-const brief = (it) => ({ id: it.id, type: it.type, name: it.name, origin_name: it.origin_name, poster: it.poster, year: it.year, kp_rating: it.kp_rating ?? it.kp, imdb_rating: it.imdb_rating ?? it.imdb, quality: it.quality });
+const brief = (it) => ({ id: it.id, ...(it._ao ? {source:it._aoSource || 'animeon2',aoSlug:it._ao.slug,voice:it._aoSelectedVoice || ''} : {}), ...(it._rutube ? {source:'rutube',rutubeId:it._rutube.id,rutubeDuration:it._rutube.duration||0,voice:it._rutube.voice||''} : {}), ...(it._vk ? {source:'vk',vkId:it._vk.id} : {}), type: it.type, name: it.name, origin_name: it.origin_name, poster: it.poster, year: it.year, kp_rating: it.kp_rating ?? it.kp, imdb_rating: it.imdb_rating ?? it.imdb, quality: it.quality });
 const goneMark = (k, id) => { S.gone = S.gone || {}; S.gone[k + ':' + id] = Date.now(); };
-const isFav = (id) => S.favs.some((f) => f.id === id);
+const isFav = (id) => S.favs.some((f) => String(f.id) === String(id));
+function wasOpened(it) {
+  if(!it)return false;const ids=[it.id,it.routeId].filter(x=>x!=null).map(String),slug=it.slug||it.aoSlug||ids.find(id=>id.startsWith('ao:'))?.slice(3)||'';
+  return (S.history||[]).some(h=>{if(slug&&h.aoSlug)return h.aoSlug===slug;const other=[h.id,h.routeId].filter(x=>x!=null).map(String);return ids.some(id=>other.includes(id))||!!(slug&&(h.aoSlug===slug||other.includes('ao:'+slug)));});
+}
 function toggleFav(it) {
-  if (isFav(it.id)) { S.favs = S.favs.filter((f) => f.id !== it.id); goneMark('f', it.id); toast('Убрано из избранного'); }
+  if (isFav(it.id)) { S.favs = S.favs.filter((f) => String(f.id) !== String(it.id)); goneMark('f', it.id); toast('Убрано из избранного'); }
   else { S.favs.unshift({ ...brief(it), at: Date.now() }); toast('Добавлено в избранное'); }
   save(); return isFav(it.id);
 }
 function addHistory(it, season, episode) {
-  S.history = S.history.filter((h) => h.id !== it.id);
+  S.history = S.history.filter((h) => String(h.id) !== String(it.id));
   S.history.unshift({ ...brief(it), season, episode, ts: Date.now() });
   S.history = S.history.slice(0, 60);
   if (season) { const k = it.id + ':' + season; (S.seen[k] = S.seen[k] || []); if (!S.seen[k].includes(String(episode))) S.seen[k].push(String(episode)); }
   save();
 }
 const progKey = (id, season, episode) => (season ? `${id}:${season}:${episode}` : String(id));
+const sourceProgressKey = (source, videoId, id, season, episode) => `${source}~${videoId}~${progKey(id,season,episode)}`;
+function sourceResumeInfo(source,videoId,id,season,episode){const k=sourceProgressKey(source,videoId,id,season,episode),p=S.progress[k];if(p&&p.t>=10&&p.d&&p.t<p.d-45)return p;if(S.extra?.sourceHistory?.[k])return null;const h=S.history.find(x=>String(x.id)===String(id)&&x.source===source&&(source==='vk'?x.vkId===videoId:x.rutubeId===videoId)&&String(x.season??'')===String(season??'')&&String(x.episode??'')===String(episode??''));const legacy=h?resumeInfo(id,season,episode):null;if(legacy)S.progress[k]={...legacy};return legacy;}
+function rememberSource(source,videoId,it,season,episode){const map=((S.extra ||= {}).sourceHistory ||= {}),k=sourceProgressKey(source,videoId,it.id,season,episode);map[k]={...brief(it),season,episode,ts:Date.now()};const keys=Object.keys(map);if(keys.length>400)keys.sort((a,b)=>(map[a].ts||0)-(map[b].ts||0)).slice(0,keys.length-400).forEach(x=>delete map[x]);save();}
+function historyProgressPct(h){const p=h.source==='vk'?sourceResumeInfo('vk',h.vkId,h.id,h.season,h.episode):h.source==='rutube'?sourceResumeInfo('rutube',h.rutubeId,h.id,h.season,h.episode):resumeInfo(h.id,h.season,h.episode);return p?Math.min(100,Math.round(p.t/p.d*100)):0;}
 const fmtTime = (s) => { s = Math.max(0, Math.floor(s)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
 function resumeInfo(id, season, episode) { const p = S.progress[progKey(id, season, episode)]; return p && p.t >= 10 && p.d && p.t < p.d - 45 ? p : null; }
 const progressPct = (id, season, episode) => { const p = resumeInfo(id, season, episode); return p ? Math.min(100, Math.round((p.t / p.d) * 100)) : 0; };
+const episodeDone = (id,season,episode) => {const entries=S.extra?.done?.[String(id)+':'+String(season)];return Array.isArray(entries)&&entries.some(x=>String(x)===String(episode));};
 function storeProgress(key, t, d) {
   if (!key || !isFinite(t) || !isFinite(d) || d < 120) return;
-  if (t > d - 45) delete S.progress[key];
+  if (t > d - 45) {
+    delete S.progress[key];
+    const match = String(key).replace(/^(?:vk|rutube)~[^~]+~/,'').match(/^(.+):([^:]+):([^:]+)$/);
+    if (match) {
+      const done = ((S.extra ||= {}).done ||= {}), seasonKey = match[1] + ':' + match[2];
+      const episodes = (done[seasonKey] ||= []), episode = String(match[3]);
+      if (!episodes.includes(episode)) episodes.push(episode);
+    }
+  }
   else if (t >= 5) S.progress[key] = { t: Math.floor(t), d: Math.floor(d), ts: Date.now() };
   else return;
   const keys = Object.keys(S.progress);
@@ -158,7 +219,7 @@ function cardHTML(it, key, opt = {}) {
   const r = rate(it);
   const pct = opt.pct || 0;
   const sub = opt.sub || [it.year, TYPES[it.type]].filter(Boolean).join(' · ');
-  return `<div class="card f" tabindex="-1" data-k="${esc(key)}" data-id="${it.id}" data-poster="${esc(posterOf(it))}" data-alt="${esc(it.alt || '')}">
+  return `<div class="card f${/^(?:vk|rutube):/.test(String(it.id)) ? ' video-thumb' : ''}" tabindex="-1" data-k="${esc(key)}" data-id="${esc(it.id)}" data-poster="${esc(posterOf(it))}" data-alt="${esc(it.alt || '')}">
     <div class="poster">${posterOf(it) ? `<img decoding="async" src="${esc(posterOf(it))}" alt="">` : ''}<div class="ph">${esc(it.name)}</div>
     ${it.quality ? `<span class="q">${esc(it.quality)}</span>` : ''}${r ? `<span class="rt">${r.toFixed(1)}</span>` : ''}${pct ? `<i class="pb" style="width:${pct}%"></i>` : ''}</div>
     <div class="t">${esc(it.name)}</div>${opt.orig && it.origin_name && String(it.origin_name).trim().toLowerCase() !== String(it.name).trim().toLowerCase() ? `<div class="o">${esc(it.origin_name)}</div>` : ''}<div class="s">${esc(sub)}</div></div>`;
@@ -178,7 +239,7 @@ async function apiPost(p, body) {
 function enrichCards() {
   clearTimeout(enrichT);
   enrichT = setTimeout(async () => {
-    const pending = () => $$('#grid .card[data-id]:not(.skel)').filter((c) => !c.dataset.e);
+    const pending = () => $$('#grid .card[data-id]:not(.skel)').filter((c) => !c.dataset.e && !String(c.dataset.id).startsWith('ao:'));
     const fill = () => pending().forEach((c) => { const m = CARD_INFO.get(c.dataset.id); if (m != null) { c.dataset.e = '1'; const sl = $('.s', c); if (m && sl) sl.textContent = m; } });
     fill();
     const ids = [...new Set(pending().map((c) => c.dataset.id))].slice(0, 50);
@@ -209,7 +270,7 @@ const posterOf = (it) => posterFix[it.id] || it.poster || '';
 const pfTried = new Set();
 const imgOk = (u) => (u ? new Promise((res) => { const im = new Image(); im.onload = () => res(true); im.onerror = () => res(false); im.src = u; setTimeout(() => res(false), 8000); }) : Promise.resolve(false));
 async function findPoster(id, name, year, bad) {
-  try { const d = await info(+id); if (d.poster && d.poster !== bad && (await imgOk(d.poster))) return d.poster; } catch {}
+  try { const d = await info(String(id).startsWith('ao:') ? String(id) : +id); if (d.poster && d.poster !== bad && (await imgOk(d.poster))) return d.poster; } catch {}
   try {
     const j = await tmdb('/search/multi', { query: name, include_adult: 'false' });
     const list = (j.results || []).filter((r) => (r.media_type === 'movie' || r.media_type === 'tv') && r.poster_path);
@@ -248,9 +309,10 @@ const stack = [];
 let renderToken = 0;
 const alive = (t) => t === renderToken;
 
-function topLevel(name, arg) { stack.length = 0; show({ name, ...arg }); }
+function topLevel(name, arg) { stack.length = 0; if(name==='tv'&&localStorage.getItem('luma.tv.view')!=='cards')show({name:'tvguide',root:true});else show({ name, ...arg }); }
 function go(name, arg) {
-  stack.push({ route, scroll: view.scrollTop, focus: document.activeElement?.dataset?.k || null });
+  const savedRoute=route.name==='details' && typeof DX!=='undefined' && DX?.tab ? {...route,detailTab:DX.tab} : route.name==='search' ? {...route,query:$('#q')?.value||''} : route;
+  stack.push({ route:savedRoute, scroll: view.scrollTop, focus: document.activeElement?.dataset?.k || null });
   show({ name, ...arg });
 }
 function back() {
@@ -267,8 +329,9 @@ async function show(r, restore) {
   view.scrollTop = 0;
   view.innerHTML = '';
   const fn = (window.RENDER && window.RENDER[r.name]) || { home: renderHome, mine: renderMine, search: renderSearch, settings: renderSettings, import: renderImport, details: renderDetails }[r.name] || renderSection;
-  try { await fn(r, t); } catch (e) { if (alive(t)) view.innerHTML = '<div class="empty"><b>Что-то пошло не так</b>Проверьте интернет и попробуйте ещё раз</div>'; }
+  try { await fn(r, t); } catch (e) { if (alive(t)) { view.innerHTML = '<div class="empty"><b>Не удалось загрузить страницу</b><p>Проверьте подключение и попробуйте ещё раз.</p><button class="btn f" tabindex="-1" data-k="page:retry">Повторить</button></div>'; view.querySelector('[data-k="page:retry"]').onclick=()=>show(r); } }
   if (!alive(t)) return;
+  if (!$('#modal').classList.contains('hidden')) return;
   if (restore) {
     view.scrollTop = restore.scroll || 0;
     const el = restore.focus && $$('.f', view).find((x) => x.dataset.k === restore.focus);
@@ -282,7 +345,7 @@ function focusFirst() { const el = $('.f', view) || $('.f', $('#top')); el?.focu
 
 let railBuilt = false;
 function curTab() {
-  if (route.name === 'tvworld') return 'tv';
+  if (route.name === 'tvworld' || route.name === 'tvguide') return 'tv';
   if (route.name === 'section') return route.sec;
   if (route.name === 'details' || route.name === 'import') { const f = stack[0]?.route; return f ? (f.name === 'section' ? f.sec : f.name) : 'home'; }
   return TABS.some((t) => t[0] === route.name) ? route.name : '';
@@ -294,9 +357,10 @@ function paintTop() {
     railBuilt = true;
   }
   $$('#rail .ri').forEach((b) => b.classList.toggle('on', b.dataset.tab === cur));
-  const title = route.name === 'details' ? '' : route.name === 'search' ? 'Поиск' : route.name === 'settings' ? 'Настройки' : route.name === 'import' ? 'Перенос данных' : (TABS.find((t) => t[0] === cur)?.[1] || '');
+  const title = ['details','notifications'].includes(route.name) ? '' : route.name === 'search' ? 'Поиск' : route.name === 'settings' ? 'Настройки' : route.name === 'import' ? 'Перенос данных' : (TABS.find((t) => t[0] === cur)?.[1] || '');
   $('#top').innerHTML = `<h1 class="ttl">${esc(title)}</h1><div class="sp"></div>
-    <button class="ib f" tabindex="-1" data-tab="search" data-k="top:search" aria-label="Поиск">${ico('search')}</button><button class="ib f" tabindex="-1" data-tab="settings" data-k="top:settings" aria-label="Настройки">${ico('gear')}</button><div class="clock" id="clock"></div>`;
+    <button class="ib f" tabindex="-1" data-tab="search" data-k="top:search" aria-label="Поиск">${ico('search')}</button><button class="ib f notice-bell" tabindex="-1" data-tab="notifications" data-k="top:notifications" aria-label="Уведомления">${ico('bell')}<span class="notice-count" id="noticeCount" hidden></span></button><button class="ib f" tabindex="-1" data-tab="settings" data-k="top:settings" aria-label="Настройки">${ico('gear')}</button><div class="clock" id="clock"></div>`;
+  if(window.updateNoticeBadge) window.updateNoticeBadge();
   tick();
 }
 function tick() { const t = new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' }); const c = $('#clock'); if (c) c.textContent = t; $$('.pclk').forEach((e) => { e.textContent = t; }); }   // часы в верхнем меню и поверх плеера
@@ -404,7 +468,7 @@ function feedPublish() {
   clearTimeout(feedT);
   feedT = setTimeout(() => {
     try {
-      const cont = (S.history || []).slice(0, 20).map((h) => withBd({ ...feedCard(h), season: h.season || 0, episode: h.episode || 0, pct: progressPct(h.id, h.season, h.episode), ts: h.ts || 0 }));
+      const cont = (S.history || []).slice(0, 20).map((h) => withBd({ ...feedCard(h), season: h.season || 0, episode: h.episode || 0, pct: historyProgressPct(h), ts: h.ts || 0 }));
       const sections = {}; for (const [k, v] of Object.entries(feedSecs)) sections[k] = { items: v.map(withBd) };
       const tvl = feedTvList();
       NATIVE.publish(JSON.stringify({ v: 2, at: Date.now(), tv: tvl.recent, tvfav: tvl.fav, cont, favs: (S.favs || []).slice(0, 30).map(feedCard), hero: (sections.tm0 || {}).items || [], sections }));
@@ -455,8 +519,14 @@ function heroBuild(items, opt = {}) {
 
 async function renderHome(_, t) {
   const hist = S.history.map((h) => ({ ...h })).slice(0, 20), key = tmHas();
-  let html = '<section class="hero skeleton" id="hero"></section>';
-  if (hist.length) html += section('rCont', 'Продолжить просмотр');
+  const personal=optGet('luma.tv.personalHome','0')==='1'?(S.favs||[]).filter(it=>!wasOpened(it)).slice(0,20):[];
+  const savedAo=optGet('luma.tv.personalHome','0')==='1'?(S.extra?.lists||[]).filter(l=>String(l.url||'').startsWith('animeon:')).slice(0,3):[];
+  let html = '<section class="hero skeleton" id="hero"></section><div id="platformStrip"></div>';
+  if (hist.length) html += section('rCont', 'Остановились на самом интересном').replace('</h2>','</h2><button class="home-activity f" tabindex="-1" data-activity="1" data-k="home:activity">Вся активность ›</button>');
+  if (personal.length) html += section('rPersonal','Что посмотреть: ещё не открывали');
+  if (savedAo.length) html += section('rAoSaved','Ещё не смотрели в сохранённых подборках');
+  if (hist.some(h=>h.season&&(h.aoSlug||String(h.id).startsWith('ao:')))) html += section('rAoFollowup','Продолжения после просмотренного');
+  if (optGet('luma.tv.personalHome','0')==='1') html += '<div id="homeUpcoming"></div>';
   if (key) html += section('tm0', 'В тренде на этой неделе');
   html += section('rNew', 'Новинки кино');
   if (key) html += section('tm1', 'Сериалы в тренде');
@@ -467,13 +537,20 @@ async function renderHome(_, t) {
   html += section('rCar', 'Мультфильмы') + section('rAni', 'Аниме') + section('rShow', 'ТВ-шоу');
   if (key) html += section('tm4', 'Скоро выйдут');
   view.innerHTML = `<div class="page">${html}</div>`;
-  if (hist.length) fillRail('rCont', hist, { each: (h) => ({ pct: progressPct(h.id, h.season, h.episode), sub: h.season ? `${h.season} сезон · ${h.episode} серия` : '' }) });
+  window.renderPlatformStrip?.();
+  if (hist.length) fillRail('rCont', hist, { each: (h) => ({ pct: historyProgressPct(h), sub: h.season ? (h.aoSlug||String(h.id).startsWith('ao:')?`${h.episode} серия`:`${h.season} сезон · ${h.episode} серия`) : 'Продолжить' }) });
+  if (personal.length) fillRail('rPersonal',personal);
+  if(savedAo.length)new Promise(resolve=>{const run=(i=0)=>{if(window.lumaAnimeSuggestions)return resolve(window.lumaAnimeSuggestions(savedAo));if(i<100)return setTimeout(()=>run(i+1),50);resolve([]);};run();}).then(items=>{if(alive(t))fillRail('rAoSaved',items,{each:()=>({sub:'Из ваших подборок AnimeOn'})});}).catch(()=>{if(alive(t))$('#rAoSaved')?.remove();});
+  if($('#rAoFollowup'))new Promise(resolve=>{const run=(i=0)=>{if(window.lumaAnimeFollowups)return resolve(window.lumaAnimeFollowups(hist));if(i<100)return setTimeout(()=>run(i+1),50);resolve([]);};run();}).then(items=>{if(alive(t))fillRail('rAoFollowup',items,{each:()=>({sub:'Продолжение франшизы'})});}).catch(()=>{if(alive(t))$('#rAoFollowup')?.remove();});
+  if(window.updateHomeUpcoming)window.updateHomeUpcoming();
   // «Новинки» в каталоге помечены как «недавно добавленные», среди них попадаются старые фильмы (Гарри Поттер 2001): оставляем свежие по году выхода
   const fresh = (d, back) => { const y = new Date().getFullYear(); let r = d.filter((x) => +x.year >= y - back); if (r.length < 6) r = d.filter((x) => +x.year >= y - back - 3); return (r.length >= 6 ? r : d).slice(0, 20); };
   const load = (id, o, back) => catalog({ limit: back ? 60 : 20, ...o }).then((d) => { if (back) d = fresh(d, back); if (alive(t)) fillRail(id, d); feedSet(id, d); return d; }).catch(() => { if (alive(t)) document.getElementById(id)?.remove(); return []; });
   const lift = [
     load('rNew', { cat: 'films', last: true }, 1), load('rSer', { cat: 'series', last: true }, 2), load('rTop', { cat: 'films', sort: 'kp' }),
-    load('rCar', { cat: 'cartoons,cartoon_series' }), load('rAni', { cat: 'anime_series,anime_films' }), load('rShow', { cat: 'tvshows' })
+    load('rCar', { cat: 'cartoons,cartoon_series' }),
+    new Promise(resolve => { const run=(attempt=0)=>{ if(window.lumaAnimeHome) return resolve(window.lumaAnimeHome()); if(attempt<100) return setTimeout(()=>run(attempt+1),50); resolve([]); }; run(); }).then(items => { if(alive(t)) fillRail('rAni',items); feedSet('rAni',items); return items; }).catch(() => { if(alive(t)) document.getElementById('rAni')?.remove(); return []; }),
+    load('rShow', { cat: 'tvshows' })
   ];
   // баннер: тренды TMDB; без ключа или при сбое — новинки каталога
   const heroP = (async () => {
@@ -504,37 +581,96 @@ async function renderHome(_, t) {
   await Promise.race([heroP, wait(5000)]);
 }
 
+const mineRandom = { scope: 'favorites', kind: 'all', unseen: false };
+const mineRandomKinds = [['all','Все категории'],['films','Фильмы'],['series','Сериалы'],['cartoons','Мультфильмы'],['anime','Аниме']];
+function mineRandomAllowed(it, kind, unseen) {
+  const types = { films:[1], series:[3,4], cartoons:[2,5], anime:[6,7] };
+  return !!it && (kind === 'all' || (types[kind] || []).includes(Number(it.type))) && (!unseen || !wasOpened(it));
+}
+async function mineRandomPick(button) {
+  if (button.dataset.busy) return;
+  const token = renderToken, {scope, kind, unseen} = mineRandom;
+  const allowed = it => mineRandomAllowed(it, kind, unseen);
+  let choices = (S.favs || []).filter(allowed);
+  button.dataset.busy='1'; button.setAttribute('aria-busy','true');
+  try {
+    if (scope === 'catalog') {
+      choices=[];
+      const shuffle = items => { const a=[...items]; for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; };
+      for (const selected of shuffle(kind==='all'?['films','series','cartoons','anime']:[kind])) {
+        if (!alive(token) || route.name!=='mine') return;
+        if (selected==='anime') {
+          for(let i=0;i<6&&!choices.length;i++){const item=await aoCall('random').catch(()=>null);if(!alive(token)||route.name!=='mine')return;if(item?.slug)choices=[aoCompactToTv(item)].filter(allowed);}
+          if(!choices.length)for(const page of shuffle([1,2,3,4,5,6,7,8]).slice(0,3)){const result=await aoCall('catalog',{page,limit:30,sort:'popular'}).catch(()=>null);if(!alive(token)||route.name!=='mine')return;choices=(result?.items||[]).map(aoCompactToTv).filter(allowed);if(choices.length)break;}
+        } else {
+          for(const page of shuffle([1,2,3,4,5,6,7,8]).slice(0,3)){
+            const items=await catalog({cat:SECTIONS[selected].cat,page,limit:30}).catch(()=>[]);
+            choices=(Array.isArray(items)?items:[]).filter(allowed); if(choices.length)break;
+          }
+        }
+        if(choices.length)break;
+      }
+    }
+  } finally { delete button.dataset.busy; button.removeAttribute('aria-busy'); }
+  if (!alive(token) || route.name!=='mine') return;
+  if (!choices.length) { toast('Подходящих тайтлов не нашлось. Измените фильтры.'); return; }
+  const chosen=choices[Math.floor(Math.random()*choices.length)];
+  const id=chosen.aoSlug?'ao:'+chosen.aoSlug:chosen.routeId||chosen.id;
+  if(/^ao:/.test(String(id)))go('details',{id:String(id)});
+  else if(Number.isSafeInteger(Number(id))&&Number(id)>0)go('details',{id:Number(id)});
+  else toast('Не удалось открыть этот тайтл');
+}
 async function renderMine(_, t) {
   let html = '';
   if (S.history.length) html += section('rHist', 'История');
   if (S.favs.length) html += section('rFav', 'Избранное');
-  if (!html) { view.innerHTML = '<div class="empty"><b>Здесь пока пусто</b>Добавляйте фильмы в избранное, а историю мы соберём сами.<br>Уже пользуетесь Luma на компьютере? Перенесите данные: Настройки → Перенос с телефона.</div>'; return; }
-  view.innerHTML = `<div class="page">${html}</div>`;
-  if (S.history.length) fillRail('rHist', S.history, { each: (h) => ({ pct: progressPct(h.id, h.season, h.episode), sub: h.season ? `${h.season} сезон · ${h.episode} серия` : '' }) });
+  if (!html) html = '<div class="empty"><b>Здесь пока пусто</b>Добавляйте фильмы в избранное, а историю мы соберём сами.</div>';
+  const kindName=mineRandomKinds.find(x=>x[0]===mineRandom.kind)?.[1]||'Все категории';
+  view.innerHTML = `<div class="page tv-catalog-page">${tvCatalogHeader('Моя библиотека','История просмотра, избранное и случайный выбор.','ВАША БИБЛИОТЕКА')}<div class="chips filters tv-catalog-toolbar"><button class="chip fl f" tabindex="-1" data-mine-random="scope" data-k="mine:scope"><small>Источник</small>${mineRandom.scope==='favorites'?'Из избранного':'Из каталога'}<i>▾</i></button><button class="chip fl f" tabindex="-1" data-mine-random="kind" data-k="mine:kind"><small>Категория</small>${esc(kindName)}<i>▾</i></button><button class="chip fl f ${mineRandom.unseen?'on':''}" tabindex="-1" data-mine-random="unseen" data-k="mine:unseen" aria-pressed="${mineRandom.unseen}">${mineRandom.unseen?'✓ ':''}Только не открывавшиеся</button><button class="chip fl f" tabindex="-1" data-mine-random="pick" data-k="mine:pick">Случайный выбор <i>✦</i></button></div>${html}</div>`;
+  if (S.history.length) fillRail('rHist', S.history, { each: (h) => ({ pct: historyProgressPct(h), sub: h.season ? (h.aoSlug||String(h.id).startsWith('ao:')?`${h.episode} серия`:`${h.season} сезон · ${h.episode} серия`) : '' }) });
   if (S.favs.length) fillRail('rFav', S.favs);
 }
 
 let secState = { sec: '', sort: 'popular', genre: '', page: 1, loading: false, done: false, gen: 0 };
-const GENRES = ['Боевик', 'Комедия', 'Драма', 'Триллер', 'Фантастика', 'Ужасы', 'Детектив', 'Фэнтези', 'Мелодрама', 'Приключения', 'Криминал', 'Семейный'];
+const GENRES = ['Боевик','Комедия','Драма','Триллер','Фантастика','Ужасы','Детектив','Фэнтези','Мелодрама','Приключения','Криминал','Семейный','Биография','Военный','История','Документальный','Музыка','Мюзикл','Спорт','Вестерн','Детский','Мультфильм'];
+const tvGenreSummary=s=>{const parts=String(s||'').split(',').filter(Boolean);return parts.slice(0,2).join(' + ')+(parts.length>2?' +'+(parts.length-2):'');};
 const capw = (x) => (x ? x[0].toUpperCase() + x.slice(1) : x);
 const SEC_TYPES = ['films', 'series', 'cartoons', 'anime', 'tvshows'];
+async function tvCurated(kind,feed){
+ const data=await tmdb(feed==='week'?'/trending/'+kind+'/week':'/'+kind+'/top_rated',{}),rows=(data.results||[]).slice(0,20),out=new Array(rows.length);let cursor=0;
+ await Promise.all(Array.from({length:Math.min(4,rows.length)},async()=>{while(cursor<rows.length){const i=cursor++,t=rows[i];try{const names=[t.title,t.name,t.original_title,t.original_name].map(nrm).filter(Boolean),year=Number(String(t.release_date||t.first_air_date||'').slice(0,4));if(!year||!names.length){out[i]={};continue;}const found=new Map();for(const q of [...new Set([t.title||t.name,t.original_title||t.original_name].filter(Boolean))])for(const x of await search(q)){if(Number(x.type)!==(kind==='movie'?1:3)||!Number(x.year)||Math.abs(Number(x.year)-year)>1)continue;if([x.name,x.origin_name].map(nrm).some(n=>n&&names.includes(n)))found.set(String(x.id),x);}const candidates=[...found.values()].sort((a,b)=>Math.abs(Number(a.year)-year)-Math.abs(Number(b.year)-year));out[i]=candidates.length>1&&Math.abs(Number(candidates[0].year)-year)===Math.abs(Number(candidates[1].year)-year)?{}:{item:candidates[0]};}catch{out[i]={error:true};}}}));return {items:out.filter(x=>x?.item).map(x=>x.item),partial:out.some(x=>!x||x.error)};
+}
+function tvMountHighlights(host,sec,t){
+ const kind=sec==='films'?'movie':'tv';host.innerHTML='<p class="sub section-highlight-source">Подборки TMDB · оценки на карточках из Luma</p>'+[['week','На этой неделе · TMDB'],['top','Высокий рейтинг · TMDB']].map(([id,title])=>`<section class="sec" data-highlight="${id}"><h2>${title}</h2><div class="track"><div class="spin"></div></div></section>`).join('');
+ for(const feed of ['week','top']){const node=host.querySelector('[data-highlight="'+feed+'"]'),track=node.querySelector('.track');const load=async()=>{const retry=track.querySelector('[data-highlight-retry]');if(retry){retry.textContent='Загружаем…';retry.setAttribute('aria-disabled','true');}else track.innerHTML='<div class="spin"></div>';try{const result=await tvCurated(kind,feed);if(!alive(t)||!node.isConnected)return;const restore=retry&&document.activeElement===retry;track.innerHTML=result.items.length?result.items.map(x=>cardHTML(x,'highlight:'+feed+':'+x.id,{orig:true})).join(''):result.partial?'<div class="empty"><b>Не удалось проверить совпадения</b><button class="btn f" tabindex="-1" data-highlight-retry="1" data-k="highlight:retry:'+feed+'">Повторить</button></div>':'<p class="sub">Совпадений в каталоге Luma пока нет.</p>';hookImages(track);if(restore)(track.querySelector('.f')||view.querySelector('[data-flt="sort"]'))?.focus({preventScroll:true});node.querySelector('.highlight-note')?.remove();if(result.partial&&result.items.length){const p=document.createElement('p');p.className='sub highlight-note';p.textContent='Некоторые совпадения не удалось проверить.';node.append(p);}}catch{if(alive(t)&&node.isConnected){const restore=retry&&document.activeElement===retry;track.innerHTML='<div class="empty"><b>Подборка временно недоступна</b><button class="btn f" tabindex="-1" data-highlight-retry="1" data-k="highlight:retry:'+feed+'">Повторить</button></div>';if(restore)track.querySelector('.f')?.focus({preventScroll:true});}}};node.addEventListener('click',e=>{const b=e.target.closest('[data-highlight-retry]');if(b&&b.getAttribute('aria-disabled')!=='true')load();});load();}
+}
+function tvCatalogHeader(title, description, source='КАТАЛОГ LUMA') {
+  return `<header class="tv-catalog-intro"><div><span class="tv-catalog-kicker">${esc(source)}</span><h1>${esc(title)}</h1><p>${esc(description)}</p></div></header>`;
+}
 async function renderSection(r, t) {
   const sec = r.sec || r.name;
+  if(sec==='tvshows'&&r.source==='rutube')return renderRutubeShows(r,t);
+  if(sec==='tvshows'&&r.source==='vk')return renderVkShows(r,t);
+  if (sec === 'anime' && !r.genre) return renderAnimeHome(t);
   const sort = r.sort || (secState.sec === sec ? secState.sort : 'popular');
   const genre = capw(r.genre || '');
   secState = { sec, sort, genre, page: 1, loading: false, done: false, gen: secState.gen + 1 };
   const sortName = (SORTS.find((x) => x[0] === sort) || SORTS[0])[1];
-  view.innerHTML = `<div class="page"><div class="chips filters">
+  const descriptions={films:'Фильмы на любой вечер — от новинок до любимой классики.',series:'Сериалы, новые сезоны и истории, к которым хочется вернуться.',cartoons:'Мультфильмы и мультсериалы для любого настроения.',tvshows:'Программы, реалити и развлечения на любой вечер.',anime:'Аниме на любой вкус.'};
+  view.innerHTML = `<div class="page tv-catalog-page">${tvCatalogHeader(SECTIONS[sec].title,descriptions[sec]||'Подборки и каталог для просмотра.')}<div class="chips filters tv-catalog-toolbar">
       <button class="chip fl f" tabindex="-1" data-flt="sort" data-k="flt:sort"><small>Сортировка</small>${esc(sortName)}<i>▾</i></button>
-      <button class="chip fl f ${genre ? 'on' : ''}" tabindex="-1" data-flt="gen" data-k="flt:gen"><small>Жанр</small>${esc(genre || 'Все жанры')}<i>▾</i></button>
-      ${genre ? `<button class="chip fl f" tabindex="-1" data-flt="type" data-k="flt:type"><small>Раздел</small>${esc(SECTIONS[sec].title)}<i>▾</i></button>` : ''}</div>
-    <div class="grid" id="grid">${skel(14)}</div></div>`;
+      <button class="chip fl f ${genre ? 'on' : ''}" tabindex="-1" data-flt="gen" data-k="flt:gen"><small>Жанры</small>${esc(genre ? tvGenreSummary(genre) : 'Все жанры')}<i>▾</i></button>
+      ${genre ? `<button class="chip fl f" tabindex="-1" data-flt="type" data-k="flt:type"><small>Раздел</small>${esc(SECTIONS[sec].title)}<i>▾</i></button>` : ''}
+      ${sec !== 'anime' ? '<button class="chip fl f" tabindex="-1" data-section-random="1" data-k="flt:random">Случайное <i>✦</i></button>' : ''}${sec==='tvshows'?'<button class="chip f" tabindex="-1" data-shows-rutube="1" data-k="shows:rutube">Шоу Rutube ›</button><button class="chip f" tabindex="-1" data-shows-vk="1" data-k="shows:vk">Шоу VK Видео ›</button>':''}</div>
+    ${['films','series'].includes(sec)?`${!genre?'<div id="sectionHighlights"></div>':''}<h2 class="section-catalog-title">Каталог</h2>`:''}<div class="grid" id="grid">${skel(14)}</div></div>`;
+  if($('#sectionHighlights'))tvMountHighlights($('#sectionHighlights'),sec,t);
   await loadMore(t, true);
-  if (alive(t)) { const c = $('#grid .card'); (c || $('.chip.on'))?.focus({ preventScroll: true }); }
+  if (alive(t)) { const c = $('#sectionHighlights') ? $('[data-flt="sort"]') : $('#grid .card'); (c || $('#grid [data-catalog-retry]') || $('.chip.on'))?.focus({ preventScroll: true }); }
 }
 async function loadMore(t, first) {
   if (secState.loading || secState.done) return;
   secState.loading = true;
+  if (!first) $('#grid [data-catalog-retry]')?.parentElement.remove();
   const gen = secState.gen;
   const strict = secState.sort === 'imdb' || secState.sort === 'kp';
   let added = 0, guard = 0;
@@ -543,46 +679,55 @@ async function loadMore(t, first) {
       const { sec, sort, genre, page } = secState;
       const q = new URLSearchParams({ category: SECTIONS[sec].cat, page, limit: 30 });
       if (sort === 'new') q.set('last', 'true'); else q.set('sort', sort);
-      if (genre) q.set('genre', genre);
+      const wanted=genre.split(',').filter(Boolean),localOnly=['биография','история','спорт'].includes(String(wanted[0]||'').toLocaleLowerCase('ru-RU'));if (wanted.length&&!localOnly) q.set('genre', wanted[0]);
       if (sort === 'imdb') q.set('kpMin', 6);
       const rr = await api('/list/categories?' + q);
       let d = Array.isArray(rr) ? rr : (rr.items || []);
       if (!alive(t) || gen !== secState.gen) return;
-      secState.page++;
       if (!d.length) { secState.done = true; break; }
+      if(wanted.length>1||localOnly){const batch=await apiPost('/info/batch',{ids:d.map(x=>String(x.id))});if(!alive(t)||gen!==secState.gen)return;const byId=new Map((batch.items||[]).map(x=>[String(x.id),x]));if(d.some(x=>!Array.isArray(byId.get(String(x.id))?.info?.genre)))throw Error('genres unavailable');const norm=x=>String(x).trim().toLocaleLowerCase('ru-RU'),required=wanted.map(norm);d=d.filter(x=>{const g=byId.get(String(x.id)).info.genre.map(norm);return required.every(v=>g.includes(v));});}
+      secState.page++;
       // сортировки по рейтингу: отсекаем фильмы без отзывов (у них «идеальные» 9.9 из одного голоса)
       if (strict) d = d.filter((it) => (it.views || 0) >= (sort === 'imdb' ? 30 : 5) && rate(it) > 0);
       if (!d.length) continue;
-      if (first && !added) $('#grid').innerHTML = '';
+      if (!added && (first || !$('#grid .card:not(.skel)'))) $('#grid').innerHTML = '';
       $('#grid').insertAdjacentHTML('beforeend', d.map((it) => cardHTML(it, 'g:' + it.id, { orig: true })).join(''));
       hookImages($('#grid')); added += d.length;
     }
-    if (first && !added && alive(t) && gen === secState.gen) $('#grid').innerHTML = '<div class="empty" style="grid-column:1/-1"><b>Тут пусто</b>Попробуйте другой жанр</div>';
+    if (!added && !$('#grid .card:not(.skel)') && alive(t) && gen === secState.gen) $('#grid').innerHTML = secState.done?'<div class="empty" style="grid-column:1/-1"><b>Тут пусто</b>Попробуйте другой жанр</div>':'<div class="empty" style="grid-column:1/-1"><b>На проверенных страницах совпадений нет</b><button class="btn f" tabindex="-1" data-catalog-retry="next" data-k="catalog:retry">Искать дальше</button></div>';
     enrichCards();
-  } catch { if (first && alive(t)) $('#grid').innerHTML = '<div class="empty" style="grid-column:1/-1"><b>Не загрузилось</b>Проверьте интернет</div>'; }
+  } catch {
+    if (alive(t) && gen === secState.gen) {
+      if (first) $('#grid').innerHTML = '<div class="empty" style="grid-column:1/-1"><b>Не удалось загрузить каталог</b><span>Проверьте соединение и попробуйте снова</span><button class="btn f" tabindex="-1" data-catalog-retry="1" data-k="catalog:retry">Повторить</button></div>';
+      else if (!$('#grid [data-catalog-retry]')) $('#grid').insertAdjacentHTML('beforeend', '<div class="empty" style="grid-column:1/-1"><b>Не удалось загрузить продолжение списка</b><button class="btn f" tabindex="-1" data-catalog-retry="next" data-k="catalog:retry">Повторить</button></div>');
+    }
+  }
   secState.loading = false;
 }
 
 let searchSeq = 0, searchT = 0;
-async function renderSearch(_, t) {
-  view.innerHTML = `<div class="page"><div class="search"><input id="q" class="f" tabindex="-1" data-k="q" placeholder="Название фильма или сериала" autocomplete="off"></div><div id="sres"><div class="empty"><b>Что будем смотреть?</b>Нажмите OK на строке поиска, чтобы открыть клавиатуру.<br>Голосовой ввод — кнопка микрофона на пульте.</div></div></div>`;
+async function renderSearch(r, t) {
+  view.innerHTML = `<div class="page tv-search-page">${tvCatalogHeader('Поиск','Фильмы, сериалы, аниме и люди в одном месте.','ПОИСК В LUMA')}<div class="search tv-search-field"><input id="q" class="f" tabindex="-1" data-k="q" aria-label="Поиск фильмов, сериалов, аниме и людей" placeholder="Название или имя" autocomplete="off"></div><div id="sres"><div class="empty"><b>Что будем смотреть?</b>Нажмите OK на строке поиска, чтобы открыть клавиатуру.<br>Голосовой ввод — кнопка микрофона на пульте.</div></div></div>`;
   const q = $('#q');
   const run = async () => {
     const text = q.value.trim(); const my = ++searchSeq;
     if (text.length < 2) return false;
     $('#sres').innerHTML = '<div class="empty"><div class="spin"></div></div>';
     try {
-      const items = await search(text);
-      if (my !== searchSeq) return false;
+      const [baseResult, animeResult] = await Promise.allSettled([search(text), aoCall('search',text)]);
+      const base=baseResult.status==='fulfilled'?baseResult.value:[],anime=animeResult.status==='fulfilled'?animeResult.value:[];
+      const items = anime.length ? [...base.filter(x=>![6,7].includes(x.type)), ...anime.map(aoCompactToTv)] : base;
+      if (!alive(t) || my !== searchSeq) return false;
       let people = []; try { people = await peopleSearch(text); } catch {}
-      if (my !== searchSeq) return;
+      if (!alive(t) || my !== searchSeq) return false;
+      if(baseResult.status==='rejected'&&!anime.length&&!people.length)throw Error('search unavailable');
       const prow = people.length ? `<h3 class="ph3" style="padding:0 48px">Люди</h3><div class="track people">${people.map((x) => `<div class="person f" tabindex="-1" data-tmdbp="${x.id}" data-k="pe${x.id}"><div class="pha">${x.photo ? `<img loading="lazy" src="${esc(x.photo)}" alt="">` : `<span>${esc((x.name || '?')[0])}</span>`}</div><b>${esc(x.name)}</b>${x.dept ? `<small>${esc(x.dept)}</small>` : ''}</div>`).join('')}</div>` : '';
       $('#sres').innerHTML = prow + (items.length ? `<div class="grid">${items.map((it) => cardHTML(it, 's:' + it.id)).join('')}</div>` : (prow ? '' : '<div class="empty"><b>Ничего не нашли</b>Попробуйте другое название</div>'));
       hookImages($('#sres'));
       return items.length > 0 || !!$('#sres .person');
-    } catch { if (my === searchSeq) $('#sres').innerHTML = '<div class="empty"><b>Поиск не отвечает</b>Проверьте интернет</div>'; return false; }
+    } catch { if (alive(t) && my === searchSeq && $('#sres')) $('#sres').innerHTML = '<div class="empty"><b>Поиск не отвечает</b>Проверьте интернет</div>'; return false; }
   };
-  q.oninput = () => { clearTimeout(searchT); if (q.value.trim().length >= 2) searchT = setTimeout(run, 450); };
+  q.oninput = () => { clearTimeout(searchT); ++searchSeq; if (q.value.trim().length >= 2) searchT = setTimeout(run, 450); else $('#sres').innerHTML = '<div class="empty"><b>Что будем смотреть?</b>Введите название фильма или сериала.</div>'; };
   // Enter на экранной клавиатуре: ищем сразу, убираем клавиатуру и переходим к результатам
   q.setAttribute('enterkeyhint', 'search');
   q.onkeydown = async (e) => {
@@ -592,6 +737,7 @@ async function renderSearch(_, t) {
     q.blur();
     if (found) setTimeout(() => ($('#sres .card') || $('#sres .person'))?.focus({ preventScroll: true }), 150);
   };
+  if(typeof r.query==='string'&&r.query.trim().length>=2){q.value=r.query;await run();if(!alive(t))return;}
   q.focus({ preventScroll: true });
 }
 
@@ -634,42 +780,71 @@ async function renderDetails(r, t) {
 const TV_TYPES = [3, 4, 5, 7], MOVIE_TYPES = [1, 2, 6];
 const TMI = (p, size) => 'https://image.tmdb.org/t/p/' + size + p;
 const tmCache = new Map();
-async function tmdb(path, params = {}) {
+async function tmdb(path, params = {}, fresh = false) {
   const key = S.secrets && S.secrets.tmdb, shared = !key;   // своего ключа нет: идём через общий посредник
   const u = new URL((shared ? TM_SHARED : 'https://api.themoviedb.org') + (shared ? '/3' : '/3') + path);
   u.searchParams.set('language', 'ru-RU');
   for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
   const headers = { Accept: 'application/json' };
   if (key) { if (key.startsWith('eyJ')) headers.Authorization = 'Bearer ' + key; else u.searchParams.set('api_key', key); }
-  const ck = u.toString(); if (tmCache.has(ck)) return tmCache.get(ck);
+  const ck = u.toString(); if (!fresh && tmCache.has(ck)) return tmCache.get(ck);
   const r = await fetch(u, { headers });
   if (!r.ok) throw new Error(r.status === 401 || r.status === 403 ? (shared ? 'SHARED' : 'BAD_KEY') : 'HTTP ' + r.status);
   const v = await r.json(); tmCache.set(ck, v); return v;
 }
 const nrm = (x) => String(x || '').toLowerCase().replace(/ё/g, 'е').replace(/[^a-zа-я0-9]+/g, ' ').trim();
 const nameOk = (a, b) => { a = nrm(a); b = nrm(b); return !!a && !!b && (a === b || (a.length >= 5 && b.length >= 5 && (a.includes(b) || b.includes(a)))); };
+// Avoid assigning artwork or trailers to a similarly named remake.
+function tmdbSelectMatch(results, {names, year, kind, anime}) {
+  const norm=x=>String(x||'').toLowerCase().replace(/ё/g,'е').normalize('NFKC').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+  const inputs=[...new Set((names||[]).map(norm).filter(Boolean))];
+  if(!inputs.length)return null;
+  const requestedYear=Number(year)||0,scored=[];
+  for(const r of Array.isArray(results)?results:[]){
+    if(!Number.isSafeInteger(Number(r?.id))||Number(r.id)<=0)continue;
+    if(anime&&(!Array.isArray(r.genre_ids)||!r.genre_ids.includes(16)))continue;
+    const titles=[r.title,r.name,r.original_title,r.original_name].map(norm).filter(Boolean);
+    const exact=inputs.some(x=>titles.includes(x));
+    if(!exact)continue;
+    const candidateYear=Number(String(r.release_date||r.first_air_date||'').slice(0,4))||0;
+    const checkYear=requestedYear&&!(anime&&kind==='tv');
+    if(checkYear&&(!candidateYear||Math.abs(candidateYear-requestedYear)>1))continue;
+    const distance=requestedYear&&candidateYear?Math.abs(requestedYear-candidateYear):null;
+    const score=(exact?1000:0)+(distance===null?0:Math.max(0,100-distance));
+    scored.push({r,score});
+  }
+  scored.sort((a,b)=>b.score-a.score);
+  if(!scored.length||scored.some(x=>x.score===scored[0].score&&Number(x.r.id)!==Number(scored[0].r.id)))return null;
+  return scored[0].r;
+}
+
 const tmFindCache = new Map();
 function tmFind(d) {
   const ck = d.id; if (tmFindCache.has(ck)) return tmFindCache.get(ck);
   const p = tmFindRaw(d); tmFindCache.set(ck, p); p.catch(() => tmFindCache.delete(ck)); return p;
 }
 async function tmFindRaw(d) {
-  const kind = TV_TYPES.includes(d.type) ? 'tv' : 'movie';
-  let found = null;
-  for (const q of [...new Set([d.origin_name, d.name].filter(Boolean))]) {
+  const kind = TV_TYPES.includes(Number(d.type)) ? 'tv' : 'movie';
+  let found = null;const anime=[6,7].includes(Number(d.type));
+  const clean=x=>anime?String(x||'').replace(/\s*\[(?:ТВ|TV)[-\s]*\d+[^\]]*\]/gi,'').replace(/\s+(?:season|сезон)\s*\d+(?:\s*(?:part|часть)\s*\d+)?\s*$/i,'').trim():String(x||'').trim();
+  const aliases=[...(d._ao?.aliases||[]),...(d._ao?.franchise?.nodes||[]).filter(x=>String(x.id)===String(d._ao.franchise.currentId)).map(x=>x.name)];
+  const names=[d.origin_name,d.name,...aliases].map(clean).filter(Boolean);
+  for (const q of [...new Set(names)]) {
     const p = { query: q };
     if (d.year) p[kind === 'tv' ? 'first_air_date_year' : 'year'] = d.year;
     let j = await tmdb('/search/' + kind, p);
-    if (!(j.results || []).length && d.year) { delete p.year; delete p.first_air_date_year; j = await tmdb('/search/' + kind, p); }
-    found = (j.results || []).find((r) => nameOk(r.title || r.name, d.name) || nameOk(r.original_title || r.original_name, d.origin_name)) || null;
+    const pick = results => tmdbSelectMatch(results,{names,year:d.year,kind,anime});
+    found = pick(j.results);
+    if (!found && d.year) { delete p.year; delete p.first_air_date_year; j = await tmdb('/search/' + kind, p); found = pick(j.results); }
     if (found) break;
   }
   if (!found) return null;
-  const x = await tmdb('/' + kind + '/' + found.id, { append_to_response: 'images,recommendations,external_ids', include_image_language: 'ru,en,null' });
+  const x = await tmdb('/' + kind + '/' + found.id, { append_to_response: 'images,recommendations,external_ids', include_image_language: anime ? 'ru,en,ja,null' : 'ru,en,null' });
   const bds = (x.images?.backdrops || []).slice().sort((a, b) => b.vote_average - a.vote_average).slice(0, 14).map((b) => b.file_path);
   const logos = x.images?.logos || [];
   const logo = (logos.find((l) => l.iso_639_1 === 'ru') || logos.find((l) => l.iso_639_1 === 'en') || logos[0])?.file_path || '';
-  return { kind, tmdb: found.id, vote: Number(x.vote_average) || 0, imdb: x.imdb_id || (x.external_ids && x.external_ids.imdb_id) || '', backdrop: x.backdrop_path || bds[0] || '', shots: bds, logo, recs: (x.recommendations?.results || []).slice(0, 16) };
+  const safeOverview=!anime&&Number(d.year)&&Math.abs(Number(d.year)-Number(String(x.first_air_date||x.release_date||'').slice(0,4)))<=1&&names.some(n=>nrm(n)&&[x.name,x.original_name,x.title,x.original_title].some(v=>nrm(v)===nrm(n)))?String(x.overview||'').trim():'';
+  return { overview:safeOverview, kind, tmdb: found.id, vote: Number(x.vote_average) || 0, imdb: x.imdb_id || (x.external_ids && x.external_ids.imdb_id) || '', backdrop: x.backdrop_path || bds[0] || '', shots: bds, logo, recs: (x.recommendations?.results || []).slice(0, 16) };
 }
 async function matchRec(t, kind) {
   const types = kind === 'tv' ? TV_TYPES : MOVIE_TYPES;
@@ -725,12 +900,21 @@ async function tmEnhance(d, t) {
 function paintEps(seasonsBox, epsBox, curSeason, pref, playing) {
   const { d, seasons } = det;
   const cur = seasons.find((x) => x.season == curSeason) || seasons[0];
-  seasonsBox.innerHTML = seasons.map((s) => `<button class="chip f ${s.season == cur.season ? 'on' : ''}" tabindex="-1" data-pk-season="${s.season}" data-pref="${pref}" data-k="${pref}s${s.season}">Сезон ${s.season}</button>`).join('');
+  const aoSingle=!!d._ao&&seasons.length===1;
+  seasonsBox.classList.toggle('hidden',aoSingle);
+  seasonsBox.innerHTML = aoSingle?'':seasons.map((s) => `<button class="chip f ${s.season == cur.season ? 'on' : ''}" tabindex="-1" data-pk-season="${s.season}" data-pref="${pref}" data-k="${pref}s${s.season}">Сезон ${s.season}</button>`).join('');
   const seen = S.seen[d.id + ':' + cur.season] || [];
+  const last = !playing&&pref==='d'?(S.history||[]).find(h=>String(h.id)===String(d.id)||(d._ao?.slug&&h.aoSlug===d._ao.slug)):null;
   epsBox.innerHTML = cur.episodes.map((e) => {
-    const pct = progressPct(d.id, cur.season, e), isCur = playing && playing.season == cur.season && playing.episode == e;
-    return `<button class="ep f ${seen.includes(String(e)) && !isCur ? 'seen' : ''} ${isCur ? 'cur' : ''}" tabindex="-1" data-ep="${e}" data-season="${cur.season}" data-k="${pref}e${cur.season}_${e}">${e}${pct ? `<i style="width:${pct}%"></i>` : ''}</button>`;
+    const completed=episodeDone(d.id,cur.season,e),opened=seen.some(x=>String(x)===String(e)),pct=completed?0:progressPct(d.id,cur.season,e),current=playing||last,isCur=!!current&&current.season==cur.season&&current.episode==e;
+    const state=completed?'Просмотрена':isCur?'Текущая серия':pct?'Просмотрено '+pct+'%':'Серия '+e;
+    if(pref==='d')return `<button class="ep ep-card f ${opened && !isCur&&!completed ? 'seen' : ''} ${completed?'done':''} ${isCur ? 'cur' : ''}" tabindex="-1" data-ep="${e}" data-season="${cur.season}" data-k="${pref}e${cur.season}_${e}" aria-label="Серия ${e} · ${esc(state)}"><span class="ep-cover"><span class="ep-number">${e}</span><span class="ep-play">▶</span>${completed?'<span class="ep-finished">✓ Просмотрена</span>':''}${pct ? `<i style="width:${pct}%"></i>` : ''}</span><small class="hidden">Серия ${e}</small><b>Серия ${e}</b></button>`;
+    if(pref==='n'){const source=!d._ao&&NP.data?.seasons?.find(s=>String(s.season)===String(cur.season))?.episodes?.find(x=>String(x.episode)===String(e)),title=String(source?.title||'').trim();return `<button class="ep ep-list-row f ${completed?'done':''} ${isCur?'cur':''}" tabindex="-1" data-ep="${e}" data-season="${cur.season}" data-k="${pref}e${cur.season}_${e}" aria-label="Серия ${e} · ${esc(state)}"><span class="ep-list-art"><span class="ep-list-placeholder">${e}</span></span><span class="ep-list-copy"><b>${esc(title||'Серия '+e)}</b><small>${esc([title?'Серия '+e:'',isCur?'Сейчас смотрите':completed?'Просмотрена':pct?'Просмотрено '+pct+'%':''].filter(Boolean).join(' · '))}</small></span>${completed?'<span class="ep-list-check">✓</span>':''}${pct?`<i style="width:${pct}%"></i>`:''}</button>`;}
+    return `<button class="ep f ${opened && !isCur&&!completed ? 'seen' : ''} ${completed?'done':''} ${isCur ? 'cur' : ''}" tabindex="-1" data-ep="${e}" data-season="${cur.season}" data-k="${pref}e${cur.season}_${e}" aria-label="Серия ${e} · ${esc(state)}">${e}${completed?'<span class="ep-check">✓</span>':''}${pct ? `<i style="width:${pct}%"></i>` : ''}</button>`;
   }).join('');
+  if(pref==='n')for(const card of epsBox.querySelectorAll('.ep-list-row')){const urls=d._ao?.episodeStillAlternatives?.[card.dataset.ep]||[d._ao?.episodeStills?.[card.dataset.ep]].filter(Boolean);const all=[...new Set([...urls,d.poster].filter(Boolean))];if(!all.length)continue;let i=0;const img=new Image();img.loading='lazy';img.alt='';img.onerror=()=>{if(++i<all.length)img.src=all[i];else img.remove()};img.src=all[0];card.querySelector('.ep-list-art').prepend(img);}
+  if(pref==='d' && String(d.id).startsWith('ao:'))for(const card of epsBox.querySelectorAll('.ep-card')){const urls=d._ao?.episodeStillAlternatives?.[card.dataset.ep]||[d._ao?.episodeStills?.[card.dataset.ep]].filter(Boolean);if(!urls.length)continue;let i=0;const img=new Image();img.loading='lazy';img.alt='';img.onerror=()=>{if(++i<urls.length)img.src=urls[i];else img.remove()};img.src=urls[0];card.querySelector('.ep-cover').prepend(img);}
+  if((pref==='d'||pref==='n') && !d._ao && ![6,7].includes(Number(d.type))) (async()=>{try{const found=await tmFind(d);if(!found||found.kind!=='tv')return;const data=await tmdb('/tv/'+found.tmdb+'/season/'+Number(cur.season),{});if(!epsBox.isConnected||(pref==='d'?det?.d!==d:!NP.on||NP.d!==d||NP.menu!=='eps'||String(NP.npSeason||NP.season)!==String(cur.season)))return;for(const row of data.episodes||[]){const card=epsBox.querySelector('[data-ep="'+Number(row.episode_number)+'"][data-season="'+Number(cur.season)+'"]');if(!card)continue;if(row.name)card.querySelector('b').textContent=row.name;const date=/^\d{4}-\d{2}-\d{2}$/.test(row.air_date||'')?new Date(row.air_date+'T12:00:00').toLocaleDateString('ru-RU',{day:'numeric',month:'short',...(pref==='d'?{year:'numeric'}:{})}):'';const meta=['Серия '+row.episode_number,date].filter(Boolean).join(' · ');if(pref==='d'){const small=card.querySelector('small');small.textContent=meta;small.classList.toggle('hidden',!date&&(!row.name||String(row.name).trim().toLowerCase()===('серия '+row.episode_number).toLowerCase()));}else card.querySelector('small').textContent=[meta,card.classList.contains('cur')?'Сейчас':card.classList.contains('done')?'Просмотрена':''].filter(Boolean).join(' · ');if(row.still_path){const cover=card.querySelector(pref==='d'?'.ep-cover':'.ep-list-art'),img=cover.querySelector('img')||new Image();img.loading='lazy';img.alt='';img.src=TMI(row.still_path,'w500');let fallbackTried=false;img.onerror=()=>{if(d.poster&&!fallbackTried){fallbackTried=true;img.src=d.poster}else img.remove()};if(!img.parentElement)cover.prepend(img)}if(row.runtime&&pref==='d'){const el=document.createElement('span');el.className='ep-runtime';el.textContent=Number(row.runtime)+' мин.';card.querySelector('.ep-cover').append(el)}}}catch{}})();
 }
 
 function renderSettings() {
@@ -749,7 +933,7 @@ function renderImport() {
   impWaiting = !!url;
   let qr = '';
   if (url) { const q = qrcode(0, 'M'); q.addData(url); q.make(); qr = q.createSvgTag({ cellSize: 6, margin: 0, scalable: true }); }
-  view.innerHTML = `<div class="page"><div class="imp"><ol>
+  view.innerHTML = `<div class="page tv-import-page">${tvCatalogHeader('Восстановить данные','Перенесите резервную копию Luma с телефона.','НАСТРОЙКИ LUMA')}<div class="imp"><ol>
     <li>В Luma для Windows: Настройки → Резервная копия → сохраните файл .luma (лучше с паролем).</li>
     <li>Перекиньте файл на телефон — через мессенджер, облако или кабель.</li>
     <li>Наведите камеру телефона на QR-код справа и откройте страницу (телефон и ТВ в одной Wi-Fi сети).</li>
@@ -774,19 +958,27 @@ function setBg() {}   // размытого фона больше нет: кар
 let playing = null, adActive = false;
 const plFrame = $('#plFrame');
 const playerOpen = () => !$('#player').classList.contains('hidden');
+window.sendReservePauseInfo = async () => {
+  if(!playing||!playerOpen())return;
+  const current=playing,d=current.d,info=d.info||{},episode=current.episode?(d._ao?'Серия '+current.episode:'Сезон '+current.season+' · серия '+current.episode):'';
+  const send=(ep={})=>{if(playing!==current||!playerOpen())return;plFrame.contentWindow?.postMessage({lumaTitle:d.name,lumaEpisode:episode,lumaAutoSkip:{op:optGet('luma.tv.autoSkipOpening','0')==='1',ed:optGet('luma.tv.autoSkipEnding','0')==='1'},lumaPauseInfo:{enabled:optGet('luma.tv.pauseDetails','1')!=='0',logo:d._pauseLogo||'',meta:[d.year,ep.runtime?ep.runtime+' мин':info.time,episode,ep.name].filter(Boolean).join(' · '),description:String(ep.description||info.description||d.description||'').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim().slice(0,420)}},'*');};
+  send();try{const [art,ep]=await Promise.all([tmFind(d).catch(()=>null),npEpisodeDetails(d,current.season,current.episode)]);if(playing!==current)return;if(art?.logo&&!d._pauseLogo)d._pauseLogo=TMI(art.logo,'w500');send(ep||{});}catch{}
+};
 function playItem(d, seasons, season, episode, opts = {}) {
+  window.pauseDetailBackground?.();
   const key = progKey(d.id, season, episode);
   const resume = opts.fromStart ? null : resumeInfo(d.id, season, episode);
-  playing = { d, seasons, season, episode, key, resumeT: resume ? resume.t : 0, startedAt: Date.now() };
+  playing = { d, seasons, season, episode, key, resumeT: resume ? resume.t : 0, restoreState:opts.restoreState || null, startedAt: Date.now() };
   adActive = false;
   addHistory(d, season, episode);
   let url = d.iframe_uri || '';
   try { const u = new URL(url); if (season) { u.searchParams.set('season', season); u.searchParams.set('episode', episode); } if (resume) u.searchParams.set('t', String(Math.floor(resume.t))); url = u.toString(); } catch {}
   $('#player').classList.remove('hidden'); $('#plPick').classList.add('hidden'); $('#plLoad').classList.remove('done');
   if (resume) toast('Продолжаем с ' + fmtTime(resume.t));
-  plFrame.onload = () => { setTimeout(() => $('#plLoad').classList.add('done'), 400); plFrame.focus(); if (resume) setTimeout(() => plFrame.contentWindow?.postMessage({ lumaSeek: resume.t }, '*'), 600); };
+  let needsKodik=false;try{needsKodik=d._aoSource==='reserve'&&/(^|\.)kodikplayer\.com$/i.test(new URL(url).hostname);}catch{}
+  plFrame.onload = () => { if(!needsKodik)setTimeout(() => $('#plLoad').classList.add('done'), 400); window.sendReservePauseInfo(); plFrame.focus(); if (resume) setTimeout(() => plFrame.contentWindow?.postMessage({ lumaSeek: resume.t }, '*'), 600); };
   plFrame.src = url;
-  setTimeout(() => $('#plLoad').classList.add('done'), 6000);
+  const initialPlaying=playing;setTimeout(() => {if(playing!==initialPlaying)return;if(needsKodik){closePlayer();toast('Не удалось загрузить резервный поток. Попробуйте ещё раз.');}else $('#plLoad').classList.add('done');}, needsKodik?20000:6000);
 }
 function closePlayer() {
   try { if (window.syncAfterPlay) syncAfterPlay(); } catch {}
@@ -830,9 +1022,14 @@ function onEpisodeChanged(m) {
 addEventListener('message', (e) => {
   const m = e.data; if (!m || typeof m !== 'object' || e.source !== plFrame.contentWindow || !playing) return;
   if (m.luma) {
+    if(m.k==='kodikManifest' && playing.d?._aoSource==='reserve'){window.playKodikDirect?.(m,playing);return;}
     // пока плеер не перемотан на сохранённое место, начало ролика не должно затирать прогресс
+    if (m.k === 'time' && playing.d?._aoSource==='reserve' && !playing.qualityInit) { playing.qualityInit=true; plFrame.contentWindow?.postMessage({lumaCmd:'quality-list',auto:true},'*'); }
+    if (m.k === 'time' && playing.d?._aoSource==='reserve' && playing.d?._ao?.shikimori && !playing.skipRequested && Number(m.d)>=60 && Number(m.d)<=10000) { const current=playing; current.skipRequested=true; fetchAnimeSkips(current.d._ao.shikimori,current.episode,Number(m.d)).then(segments=>{if(playing===current&&segments?.length)plFrame.contentWindow?.postMessage({lumaSkips:segments},'*');}); }
     if (m.k === 'time' && !adActive) { if (!(playing.resumeT && Number(m.t) < playing.resumeT - 20 && Date.now() - playing.startedAt < 30000)) storeProgress(playing.key, Number(m.t), Number(m.d)); }
     else if (m.k === 'menu') openPick();
+    else if (m.k === 'reserveMenu' && playing.d?._aoSource==='reserve') openReserveControls();
+    else if (m.k === 'reserveQuality' && playing.d?._aoSource==='reserve') { if(m.auto){const pref=Number(npPrefs().quality)||0, values=(m.values||[]).map(Number).filter(x=>x>0).sort((a,b)=>a-b);if(pref&&values.length){const target=values.filter(x=>x<=pref).pop()||values[0];plFrame.contentWindow?.postMessage({lumaCmd:'quality-set',value:target},'*');}}else showReserveQuality(m); }
     else if (m.k === 'back') lumaBack();
     else if (m.k === 'ended') { storeProgress(playing.key, 1e9, 1e9); if (playing.season && !nextEpisode(1)) closePlayer(); }
   } else if (m.event === 'adStart') adActive = true;
@@ -852,8 +1049,8 @@ function toastSync(msg) {
   const t = $('#toast'); t.textContent = msg; t.classList.add('q'); t.classList.add('on');
   clearTimeout(toastT); toastT = setTimeout(() => { t.classList.remove('on'); setTimeout(() => t.classList.remove('q'), 350); }, 2600);
 }
-function dlg(html) { const m = $('#modal'); m.innerHTML = `<div class="dlg">${html}</div>`; m.classList.remove('hidden'); $('.f', m)?.focus({ preventScroll: true }); }
-function closeDlg() { $('#modal').classList.add('hidden'); }
+function dlg(html) { const m = $('#modal'); if (route.name === 'settings' && m.classList.contains('hidden')) m.dataset.returnSettings = document.activeElement?.dataset?.k || ''; m.innerHTML = `<div class="dlg">${html}</div>`; m.classList.remove('hidden'); $('.f', m)?.focus({ preventScroll: true }); }
+function closeDlg() { window.__in?.ins?.forEach(i=>{if(i.type==='password')i.value='';}); window.__in=null; const modal=$('#modal'),character=modal.dataset.returnCharacter,returnSport=modal.dataset.returnSport,returnGenre=modal.dataset.returnGenre,returnSettings=modal.dataset.returnSettings,refreshSport=!!modal.querySelector('[data-sport-follow-dirty]');delete modal.dataset.returnCharacter;delete modal.dataset.returnSport;delete modal.dataset.returnGenre;delete modal.dataset.returnSettings;modal.classList.add('hidden'); if(refreshSport&&route?.name==='sport'&&!route.panel&&typeof sportMode!=='undefined'&&sportMode==='followed'){show({name:'sport'},{focus:'sport:followed'});return;} if (playerOpen()) plFrame.focus(); else if(returnSettings && route.name==='settings') $$('.f',view).find(x=>x.dataset.k===returnSettings)?.focus({preventScroll:true}); else if(returnGenre) $$('.f',view).find(x=>x.dataset.k===returnGenre)?.focus({preventScroll:true}); else if(returnSport) $$('.f',view).find(x=>x.dataset.k===returnSport)?.focus({preventScroll:true}); else if(character!==undefined) ($(`[data-character="${character}"]`)||$('[data-dtab="characters"]'))?.focus({preventScroll:true}); }
 
 window.lumaBack = () => {
   if (window.npBack && window.npBack()) return true;
@@ -883,15 +1080,50 @@ document.addEventListener('click', (e) => {
 /* ================= действия ================= */
 document.addEventListener('click', async (e) => {
   const el = e.target.closest('.f'); if (!el) return;
-  if (el.dataset.tab) { stopImport(); const k = el.dataset.tab; const top = ['home', 'mine', 'search', 'settings', 'tv', 'lists'].includes(k); topLevel(top ? k : 'section', top ? {} : { sec: k }); return; }
-  if (el.classList.contains('card') && el.dataset.id) { go('details', { id: +el.dataset.id }); return; }
+  if (el.dataset.catalogRetry) { if (el.dataset.catalogRetry === 'next') { el.parentElement.remove(); await loadMore(renderToken, false); $('#grid [data-catalog-retry]')?.focus({preventScroll:true}); } else show(route); return; }
+  if (el.dataset.tab) { stopImport(); const k = el.dataset.tab; if(k==='notifications'){go('notifications');return;} const top = ['home', 'mine', 'search', 'settings', 'tv', 'lists', 'sport'].includes(k); topLevel(top ? k : 'section', top ? {} : { sec: k }); return; }
+  if (el.classList.contains('card') && el.dataset.id) {
+    const id=el.dataset.id,entry=S.history.find(h=>String(h.id)===id);
+    if(entry&&/^vk:-?\d+_\d+$/.test(id)){playVkTitle(entry,[],null,null,{id:id.slice(3)});return;}
+    if(entry&&/^rutube:[a-f\d]{32}$/i.test(id)){playRutubeTitle(entry,[],null,null,{id:id.slice(7),duration:entry.rutubeDuration||0});return;}
+    go('details', { id: /^ao:/.test(id) ? id : +id }); return;
+  }
   if (el.dataset.tmdbp) { go('person', { tmdb: +el.dataset.tmdbp }); return; }
   if (el.dataset.htab) { HERO.picked = true; heroSwitch(el.dataset.htab, true); return; }
   if (el.dataset.hero) { const h = HERO.items[HERO.i]; if (h) go('details', { id: h.it.id, autoplay: el.dataset.hero === 'watch' }); return; }
+  if (el.dataset.mineRandom && route.name === 'mine') {
+    const action=el.dataset.mineRandom;
+    const update=()=>show({name:'mine'},{scroll:0,focus:'mine:'+action});
+    if(action==='scope')pickDlg('Источник',[['favorites','Из избранного'],['catalog','Из каталога']].map(([v,label])=>({v,label,on:mineRandom.scope===v})),o=>{mineRandom.scope=o.v;update();});
+    else if(action==='kind')pickDlg('Категория',mineRandomKinds.map(([v,label])=>({v,label,on:mineRandom.kind===v})),o=>{mineRandom.kind=o.v;update();});
+    else if(action==='unseen'){mineRandom.unseen=!mineRandom.unseen;update();}
+    else if(action==='pick')void mineRandomPick(el);
+    return;
+  }
+  if (el.dataset.sectionRandom && route.name === 'section') {
+    if (el.dataset.busy) return;
+    const state = { sec: secState.sec, genre: secState.genre, sort: secState.sort, gen: secState.gen };
+    const excluded = new Set([...S.history, ...S.favs].map(x => String(x.id)));
+    el.dataset.busy = '1'; el.setAttribute('aria-busy', 'true');
+    let options = [];
+    try {
+      const page = 1 + Math.floor(Math.random() * 8);
+      options = (await catalog({ cat: SECTIONS[state.sec].cat, page, limit: 30, sort: state.sort === 'new' ? 'popular' : state.sort, last: state.sort === 'new', genre: state.genre }))
+        .filter(x => x.id != null && !excluded.has(String(x.id)) && (!(state.sort === 'imdb' || state.sort === 'kp') || ((x.views || 0) >= (state.sort === 'imdb' ? 30 : 5) && rate(x) > 0)));
+    } catch {}
+    delete el.dataset.busy; el.removeAttribute('aria-busy');
+    if (route.name !== 'section' || secState.gen !== state.gen) return;
+    if (!options.length) options = $$('#grid .card[data-id]').filter(x => !excluded.has(String(x.dataset.id))).map(x => ({id:x.dataset.id}));
+    if (!options.length) { toast(secState.loading ? 'Каталог ещё загружается' : 'Не удалось найти новый тайтл в этом разделе'); return; }
+    const id = String(options[Math.floor(Math.random() * options.length)].id);
+    if (/^ao:/.test(id)) go('details', { id }); else if (Number.isSafeInteger(Number(id)) && Number(id)>0) go('details', { id: Number(id) });
+    return;
+  }
   if (el.dataset.flt && route.name === 'section') {
     const k = el.dataset.flt, cur = { sec: secState.sec, sort: secState.sort, genre: secState.genre };
     const go2 = (patch) => show({ name: 'section', ...cur, ...patch }, { scroll: 0, focus: 'flt:' + k });
     if (k === 'sort') pickDlg('Сортировка', SORTS.map(([v, l]) => ({ label: l, on: v === cur.sort, v })), (o) => go2({ sort: o.v }));
+    else if (k === 'gen' && ['films','series'].includes(cur.sec)) tvChooseAnimeGenres('luma');
     else if (k === 'gen') pickDlg('Жанр', [{ label: 'Все жанры', on: !cur.genre, v: '' }, ...[...(cur.genre && !GENRES.includes(cur.genre) ? [cur.genre] : []), ...GENRES].map((g) => ({ label: g, on: g === cur.genre, v: g }))], (o) => go2({ genre: o.v }));
     else pickDlg('Раздел', SEC_TYPES.map((v) => ({ label: SECTIONS[v].title, on: v === cur.sec, v })), (o) => go2({ sec: o.v }));
     return;
@@ -912,19 +1144,24 @@ document.addEventListener('click', async (e) => {
     return;
   }
   const act = el.dataset.act;
-  if (act === 'watch') { const { d, seasons, serial, s0, e0 } = det; playItem(d, seasons, serial ? s0 : null, serial ? e0 : null); }
+  if (act === 'aoPrimary') { const {d,seasons,serial,s0,e0}=det; delete d._rutube; delete d._vk; d._aoSource='animeon2'; tvAoWatchPrefSet(d,{mode:'animeon2'}); playItem(d,seasons,serial?s0:null,serial?e0:null); }
+  else if (act === 'aoReserve') { const {d,seasons,serial,s0,e0}=det; openAnimeReserve(d,seasons,serial?s0:null,serial?e0:1); }
+  else if (act === 'vk') { const {d,seasons,serial,s0,e0}=det; chooseVk(d,seasons,serial?s0:null,serial?e0:null); }
+  else if (act === 'rutube') { const {d,seasons,serial,s0,e0}=det; chooseRutube(d,seasons,serial?s0:null,serial?e0:null); }
+  else if (act === 'mainPlayer') { const {d,seasons,serial,s0,e0}=det; delete d._rutube; delete d._vk; playItem(d,seasons,serial?s0:null,serial?e0:null); }
+  else if (act === 'watch') { const { d, seasons, serial, s0, e0 } = det; playItem(d, seasons, serial ? s0 : null, serial ? e0 : null); }
   else if (act === 'start') { const { d, seasons, serial, s0, e0 } = det; playItem(d, seasons, serial ? s0 : null, serial ? e0 : null, { fromStart: true }); }
   else if (act === 'fav') { const on = toggleFav(det.d); el.classList.toggle('on', on); el.querySelector('span').textContent = on ? 'В избранном' : 'В избранное'; }
   else if (act === 'import') go('import');
   else if (act === 'impback') { stopImport(); if (!back()) topLevel('settings'); }
-  else if (act === 'clearhist') { S.history.forEach((h) => goneMark('h', h.id)); S.history = []; S.progress = {}; save(); toast('История очищена'); }
+  else if (act === 'clearhist') { S.history.forEach((h) => goneMark('h', h.id)); S.history = []; S.progress = {}; if(S.extra)S.extra.sourceHistory={}; save(); toast('История очищена'); }
 });
 
 /* ================= пульт: перемещение фокуса ================= */
 const visible = (el) => el.offsetParent !== null || el.getClientRects().length > 0;
 function move(dir) {
   const tvl = $('#tvList'), tvg = $('#tvProg');
-  const npm = window.npActive && window.npActive() ? ($('#npMenu') && !$('#npMenu').classList.contains('hidden') ? $('#npMenu') : $('#np')) : null;
+  const npm = window.npActive && window.npActive() ? ($('#npNext') && !$('#npNext').classList.contains('hidden') ? $('#npNext') : $('#npMenu') && !$('#npMenu').classList.contains('hidden') ? $('#npMenu') : $('#np')) : null;
   const scope = npm ? npm : (tvg && !tvg.classList.contains('hidden')) ? tvg : !$('#modal').classList.contains('hidden') ? $('#modal') : !$('#plPick').classList.contains('hidden') ? $('#plPick') : (tvl && !tvl.classList.contains('hidden')) ? tvl : document.body;
   const cur = document.activeElement?.classList?.contains('f') ? document.activeElement : null;
   const list = $$('.f', scope).filter(visible);
@@ -986,7 +1223,7 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' || e.key === 'Backspace') { e.preventDefault(); lumaBack(); return; }
     if (window.tvKey(e)) return;
   }
-  if (playerOpen() && $('#plPick').classList.contains('hidden')) {
+  if (playerOpen() && $('#plPick').classList.contains('hidden') && $('#modal').classList.contains('hidden')) {
     // клавиши пульта должны попасть в плеер
     if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Enter', ' '].includes(e.key)) { plFrame.focus(); }
     if (e.key === 'Escape' || e.key === 'Backspace') { lumaBack(); e.preventDefault(); }
@@ -1016,7 +1253,7 @@ function hScroller(el) {
   return null;
 }
 function ensureVisible(el, instant) {
-  if (el.closest('#modal')) { el.scrollIntoView({ block: 'nearest' }); return; }
+  if (el.closest('#modal, #npMenu')) { el.scrollIntoView({ block: 'nearest', inline: 'nearest' }); return; }
   if (el.closest('#tvList, #tvProg')) { el.scrollIntoView({ block: 'nearest' }); return; }
   if (el.closest('.hero, #dTabs')) { view.scrollTo({ top: 0, behavior: instant ? 'auto' : 'smooth' }); return; }
   const sr = stage.getBoundingClientRect();

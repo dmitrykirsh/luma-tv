@@ -15,13 +15,15 @@ function exportJson() {
   const x = tvX();
   return JSON.stringify({
     app: 'Luma', format: 1, exportedAt: new Date().toISOString(), version: NATIVE ? NATIVE.version() : '',
-    data: { favs: S.favs, history: S.history, seen: S.seen, gone: S.gone || {}, progress: S.progress, lists: x.lists || [], tvFav: x.tvFav || [], tvStats: x.tvStats || {}, tvCustom: (x.tvCustom || []).filter((e) => e.url), tvLast: x.tvLast || '' },
+    data: { ...(x.done ? {done:x.done} : {}), ...(x.sourceHistory ? {sourceHistory:x.sourceHistory} : {}), ...(x.watchPrefs ? {watchPrefs:x.watchPrefs} : {}), ...(x.sportFollows ? {sportFollows:x.sportFollows} : {}), ...(x.sportReminders ? {sportReminders:x.sportReminders} : {}), ...(x.playerVoicePrefs ? {playerVoicePrefs:x.playerVoicePrefs} : {}), ...(x.trackedPremieres ? {trackedPremieres:x.trackedPremieres} : {}), favs: S.favs, history: S.history, seen: S.seen, gone: S.gone || {}, progress: S.progress, lists: x.lists || [], tvFav: x.tvFav || [], tvStats: x.tvStats || {}, tvEpgLinks: x.tvEpgLinks || {}, tvCustom: (x.tvCustom || []).filter((e) => e.url), tvLast: x.tvLast || '' },
     secrets: syncSecrets(), sync: S.group ? { gid: S.group.id, gkey: S.group.key } : undefined
   });
 }
 /** Ключи сервисов + вход Google (вход едет только между устройствами по сети, в файл на Диске он не попадает). */
 function syncSecrets(withGoogle = true) {
-  const sec = { ...(S.secrets || {}) }; delete sec.google;
+  if (S.secrets?.animeon && window.LumaAnimeOnSecret) { aoAdoptSecret(S.secrets.animeon); delete S.secrets.animeon; save(); }
+  const sec = { ...(S.secrets || {}) }; delete sec.google; delete sec.animeon;
+  if (aoSecretCache) sec.animeon = aoSecretCache;
   if (withGoogle) { try { const g = NATIVE.driveSecret(); if (g) sec.google = g; } catch {} }
   return sec;
 }
@@ -32,7 +34,18 @@ function adoptGoogle(obj) {
   if (!g) return;
   try { if (NATIVE.driveAdopt(g)) { renderDriveBox(); setTimeout(() => driveSyncNow(), 1500); } } catch {}
 }
-const syState = () => JSON.stringify([S.history.length, S.favs.length, Object.keys(S.progress).length, Math.max(0, ...S.history.map((h) => h.ts || 0)), Math.max(0, ...Object.values(S.progress).map((p) => p.ts || 0))]);
+const syState = () => {
+  const ordered = obj => Object.entries(obj || {}).sort(([a],[b])=>a.localeCompare(b));
+  let animeonVersion=0;try{animeonVersion=Number(JSON.parse(aoSecretCache||'{}').updatedAt)||0;}catch{}
+  return JSON.stringify([
+    S.history, S.favs, ordered(S.progress), ordered(S.seen),
+    ordered(tvX().watchPrefs), ordered(tvX().sportFollows), ordered(tvX().sportReminders), ordered(tvX().sourceHistory), ordered(tvX().done),
+    animeonVersion,
+    ordered(tvX().tvEpgLinks || {}).map(([id,link])=>[id,link?.id||'',Number(link?.ts||0)]),
+    (tvX().lists||[]).map(l=>[l.url,Number(l.at||0),l.title,l.author,l.count,l.desc,l.names]).sort((a,b)=>String(a[0]).localeCompare(String(b[0]))),
+    ordered(S.gone||{})
+  ]);
+};
 /** Наш сервер приёма включён всегда, чтобы другие устройства могли нас найти и обменяться данными. */
 function syServe() { if (!NATIVE || !NATIVE.syncServe) return; try { NATIVE.syncServe(S.group ? S.group.id : '', S.group ? S.group.key : '', S.did, exportJson()); } catch {} }
 function adoptGroup(sy) {
@@ -53,7 +66,8 @@ function syStatus(txt, cls) { SY.status = txt; const e = $('#syStatus'); if (e) 
 function refreshUi() {
   try {
     if (playerOpen() || (window.npActive && window.npActive())) return;
-    if (route && (route.name === 'home' || route.name === 'mine')) show(route, { scroll: view.scrollTop, focus: document.activeElement?.dataset?.k });
+    if (route?.name === 'tvguide') { tvGuideUpdate(); return; }
+    if (route && ['home','mine','lists','list','animeCollection'].includes(route.name)) show(route, { scroll: view.scrollTop, focus: document.activeElement?.dataset?.k });
   } catch {}
 }
 
@@ -88,7 +102,7 @@ function renderSync(r, t) {
   SY.code = String(1000 + Math.floor(Math.random() * 9000)); SY.found = []; SY.scanning = false; SY.busy = '';
   syServe(); try { NATIVE.syncCode(SY.code); } catch {}
   const has = !!S.group;
-  view.innerHTML = `<div class="page"><div class="sy">
+  view.innerHTML = `<div class="page tv-sync-page">${tvCatalogHeader('Синхронизация устройств','Подключите устройства в одной сети, чтобы синхронизировать данные.','НАСТРОЙКИ LUMA')}<div class="sy">
     <div class="sy-code"><small>Код этого устройства</small><b class="big" id="syCode">${SY.code.split('').join(' ')}</b><p>Введите этот код на другом устройстве (компьютер: Luma → Настройки → Синхронизация устройств). Подключить нужно один раз: дальше устройства будут синхронизироваться сами.</p>
       <div class="sy-st" id="syStatus">${esc(SY.status || (has ? 'Устройства группы обмениваются сами: при запуске, после просмотра и по кнопке' : 'Группа устройств ещё не создана'))}</div></div>
     <div class="sy-pc"><h3>Синхронизация по Wi-Fi</h3><p>Последняя: ${esc(S.synced ? new Date(S.synced).toLocaleString('ru', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) : 'ещё не было')}${has ? ' · группа ' + esc(S.group.id) : ''}</p>

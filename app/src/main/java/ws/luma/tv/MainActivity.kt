@@ -19,7 +19,11 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
+import androidx.webkit.ProxyConfig
+import androidx.webkit.ProxyController
 import androidx.webkit.WebViewAssetLoader
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.NetworkInterface
@@ -31,6 +35,9 @@ import java.net.URL
  */
 class MainActivity : Activity() {
     private lateinit var web: WebView
+    private val youtubeProxyLock = Any()
+    private var youtubeProxy: Process? = null
+    private var youtubeProxyGeneration = 0
     private var importServer: ImportServer? = null
     private var injected: String = ""
     private var embedCss: String = ""
@@ -39,6 +46,7 @@ class MainActivity : Activity() {
     private lateinit var np: NativePlayer
     private lateinit var syncNet: SyncNet
     private lateinit var driveSync: DriveSync
+    private val animeOn by lazy { AnimeOnAuth(this) }
     private lateinit var torrent: Torrent
     private var syncSrv: ImportServer? = null
     private var pendingLink = ""   // «id,play» из luma://open, пока страница не загрузилась
@@ -85,6 +93,8 @@ class MainActivity : Activity() {
         web = WebView(this).apply {
             setBackgroundColor(Color.TRANSPARENT)   // фон рисует страница, поэтому под ней может показываться видео
             isFocusable = true; isFocusableInTouchMode = true
+            // Фокус внутри WebView отмечаем своими стилями; системная рамка вокруг всего видео здесь лишняя.
+            if (android.os.Build.VERSION.SDK_INT >= 26) defaultFocusHighlightEnabled = false
             settings.apply {
                 javaScriptEnabled = true
                 domStorageEnabled = true
@@ -113,18 +123,42 @@ class MainActivity : Activity() {
                 }
                 override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
                     val rh = request.url.host ?: ""
+                    // Some Kodik releases use fetch or HLS instead of XHR. Observe
+                    // their actual media manifest even when the page bridge misses it.
+                    val mediaPath = request.url.encodedPath ?: ""
+                    if ((rh == "solodcdn.com" || rh.endsWith(".solodcdn.com")) && Regex("^/(useruploads|animetvseries)/.+/(240|360|480|720|1080|1440|2160)\\.mp4:hls:manifest(-v[0-9]+-a[0-9]+)?\\.m3u8$", RegexOption.IGNORE_CASE).matches(mediaPath)) {
+                        val manifest = JSONObject.quote(request.url.toString())
+                        js("window.lumaKodikManifest && window.lumaKodikManifest($manifest)")
+                    }
                     // лишние запросы плеера сайта: пиксели статистики и загрузчик рекламных XML (preroll). Отвечаем пустым «не найдено», плеер просто идёт без рекламы
-                    if (rh == "s.namy.ws" || rh == "vuegenesisvue.com" || rh.endsWith(".vuegenesisvue.com")) return WebResourceResponse("text/plain", "utf-8", 404, "Not Found", mapOf("Access-Control-Allow-Origin" to "*"), java.io.ByteArrayInputStream(ByteArray(0)))
+                    val adHost = rh == "s.namy.ws" || rh == "vuegenesisvue.com" || rh.endsWith(".vuegenesisvue.com") || rh == "code.moviead55.ru" || rh == "mc.yandex.ru" || rh == "ad.mail.ru" || rh == "s2.sapfir.tv" || rh == "aj0453.top" || rh.endsWith(".aj0453.top")
+                    val adPath = request.url.encodedPath ?: ""
+                    val kodikAds = (rh == "kimberlite.io" && adPath.startsWith("/rtb/bid/vast/")) || (rh == "ipvertnet.com" && adPath.startsWith("/vast3/")) || (rh == "yandex.ru" && adPath.startsWith("/ads/adfox/")) || (rh == "adx.stack.bidster.net" && adPath.startsWith("/vast/")) || (rh == "a.suprion.ru" && (adPath.startsWith("/vast/") || adPath.startsWith("/static/vpaid/"))) || (rh == "bid.ctv.house" && adPath.startsWith("/ads/")) || (rh == "ad.moe.video" && adPath.startsWith("/vast"))
+                    val adRequest = adHost || kodikAds || (rh.endsWith(".traffer.net") && adPath.startsWith("/code/video-steam")) || (rh == "vast.ufouxbwn.com" && adPath == "/vast.php") || (rh == "franecki.net" && adPath.startsWith("/assets/vendor/") && adPath.endsWith(".xml")) || ((rh == "kodikplayer.com" || rh.endsWith(".kodikplayer.com")) && adPath == "/adsbygoogle.js") || (rh.endsWith("yandex.ru") && adPath.startsWith("/watch/")) || (rh == "vidalak.com" && adPath.startsWith("/api/vpaid")) || (rh == "ssp.surfy.space" && adPath.startsWith("/wrap/vpaid")) || (rh == "cdn.jsdelivr.net" && adPath.startsWith("/npm/yandex-metrica-watch/"))
+                    if (adRequest) return WebResourceResponse("text/plain", "utf-8", 404, "Not Found", mapOf("Access-Control-Allow-Origin" to "*"), java.io.ByteArrayInputStream(ByteArray(0)))
                     if (request.method == "GET" && (rh.endsWith("ytimg.com") || rh.endsWith("ggpht.com"))) return ytImage(request)
                     if (net.handles(request)) return net.serve(request)
                     loader.shouldInterceptRequest(request.url)?.let { return it }
                     val host = request.url.host ?: return null
-                    if (injected.isNotEmpty() && !request.isForMainFrame && host != "liftw.ws" && request.method == "GET" &&
+                    if (injected.isNotEmpty() && !request.isForMainFrame && host != "liftw.ws" && !host.endsWith("youtube.com") && !host.endsWith("youtube-nocookie.com") && request.method == "GET" &&
                         (request.requestHeaders["Accept"] ?: "").contains("text/html")) return injectEmbed(request)
                     return null
                 }
             }
             addJavascriptInterface(Bridge(), "Native")
+        }
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            WebViewCompat.addWebMessageListener(web, "LumaAnimeOnSecret", setOf("https://liftw.ws")) { _, message, _, isMainFrame, reply ->
+                if (isMainFrame) try {
+                    val req=JSONObject(message.data ?: "{}"); val response=JSONObject().put("id",req.optInt("id"))
+                    when(req.optString("action")) {
+                        "get" -> response.put("value",animeOn.loginSecret())
+                        "adopt" -> response.put("value",animeOn.adoptLoginSecret(req.optString("value")))
+                        else -> response.put("error","BAD_REQUEST")
+                    }
+                    reply.postMessage(response.toString())
+                } catch (_: Exception) {}
+            }
         }
         WebView.setWebContentsDebuggingEnabled(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, true)
@@ -178,6 +212,11 @@ class MainActivity : Activity() {
         } catch (_: Exception) { null }
     }
 
+    private fun stopYoutubeProxy() {
+        synchronized(youtubeProxyLock) { youtubeProxyGeneration++; youtubeProxy?.destroy(); youtubeProxy = null }
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) try { ProxyController.getInstance().clearProxyOverride(androidx.core.content.ContextCompat.getMainExecutor(this)) {} } catch (_: Exception) {}
+    }
+
     private fun js(code: String) = runOnUiThread { web.evaluateJavascript(code, null) }
 
     private fun <T> onMain(block: () -> T): T {
@@ -188,10 +227,133 @@ class MainActivity : Activity() {
     }
 
     inner class Bridge {
+        @JavascriptInterface fun aoStatus(): String = animeOn.status()
+        @JavascriptInterface fun aoLogin(email: String, password: String): String = animeOn.login(email, password)
+        @JavascriptInterface fun aoLogout(): String = animeOn.logout()
+        @JavascriptInterface fun aoLoginSaved(): String = animeOn.loginSaved()
+        @JavascriptInterface fun aoLoginSavedAsync(requestId: Int) {
+            Thread {
+                val result = try { animeOn.loginSaved() } catch (_: Exception) { "{\"error\":\"NETWORK\"}" }
+                js("window.lumaAoLoginResult && window.lumaAoLoginResult($requestId,$result)")
+            }.start()
+        }
+        @JavascriptInterface fun aoResolve(input: String): String = animeOn.resolve(input)
+        @JavascriptInterface fun aoResolveAsync(input: String, requestId: Int) {
+            Thread {
+                val result = try { animeOn.resolve(input) } catch (_: Exception) { "{\"error\":\"NETWORK\"}" }
+                js("window.lumaAoResolveResult && window.lumaAoResolveResult($requestId,$result)")
+            }.start()
+        }
         @JavascriptInterface fun version(): String = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "?" } catch (_: Exception) { "?" }
 
+        @JavascriptInterface fun searchTwitch(search: String, requestId: Int) {
+            val text = search.trim().take(100)
+            if (text.length < 3) { js("window.tvTwitchSearchResolved && window.tvTwitchSearchResolved($requestId,[])"); return }
+            Thread {
+                val output = org.json.JSONArray()
+                var failed = false
+                try {
+                    val conn = java.net.URL("https://gql.twitch.tv/gql").openConnection() as java.net.HttpURLConnection
+                    conn.requestMethod = "POST"; conn.connectTimeout = 10000; conn.readTimeout = 10000; conn.doOutput = true
+                    conn.setRequestProperty("Client-ID", "kimne78kx3ncx6brgo4mv6wki5h1ko"); conn.setRequestProperty("Content-Type", "application/json")
+                    val query = "query(\$q:String!){searchStreams(userQuery:\$q,first:40){edges{node{title viewersCount broadcaster{login displayName profileImageURL(width:70)} game{name}}}}}"
+                    val body = JSONObject().put("query", query).put("variables", JSONObject().put("q", text)).toString()
+                    conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                    val edges = JSONObject(conn.inputStream.bufferedReader().use { it.readText() }).optJSONObject("data")?.optJSONObject("searchStreams")?.optJSONArray("edges") ?: throw IllegalStateException("Missing Twitch results")
+                    if (edges != null) for (i in 0 until minOf(edges.length(), 40)) {
+                        val item = edges.optJSONObject(i)?.optJSONObject("node") ?: continue; val b = item.optJSONObject("broadcaster") ?: continue
+                        val id=b.optString("login"); if (!id.matches(Regex("[A-Za-z0-9_]{3,25}"))) continue
+                        output.put(JSONObject().put("id",id).put("name",b.optString("displayName").take(100)).put("title",item.optString("title").take(250)).put("image",b.optString("profileImageURL")).put("game",item.optJSONObject("game")?.optString("name") ?: "").put("viewers",item.optInt("viewersCount")))
+                    }
+                    conn.disconnect()
+                } catch (_: Exception) { failed = true }
+                js("window.tvTwitchSearchResolved && window.tvTwitchSearchResolved($requestId," + output.toString() + "," + failed + ")")
+            }.start()
+        }
+        @JavascriptInterface fun resolveTwitch(channel: String, requestId: Int) {
+            val name = channel.lowercase()
+            if (!name.matches(Regex("[a-z0-9_]{3,25}"))) return
+            Thread {
+                var result = ""
+                try {
+                    val conn = java.net.URL("https://gql.twitch.tv/gql").openConnection() as java.net.HttpURLConnection
+                    conn.requestMethod = "POST"; conn.connectTimeout = 10000; conn.readTimeout = 10000; conn.doOutput = true
+                    conn.setRequestProperty("Client-ID", "kimne78kx3ncx6brgo4mv6wki5h1ko")
+                    conn.setRequestProperty("Content-Type", "application/json")
+                    val query = "query PlaybackAccessToken(\$login:String!){streamPlaybackAccessToken(channelName:\$login,params:{platform:\"web\",playerBackend:\"mediaplayer\",playerType:\"site\"}){value signature}}"
+                    val body = JSONObject().put("query", query).put("variables", JSONObject().put("login", name)).toString()
+                    conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                    val response = conn.inputStream.bufferedReader().use { it.readText() }
+                    val token = JSONObject(response).optJSONObject("data")?.optJSONObject("streamPlaybackAccessToken")
+                    val sig = token?.optString("signature") ?: ""; val value = token?.optString("value") ?: ""
+                    if (sig.isNotBlank() && value.isNotBlank()) result = "https://usher.ttvnw.net/api/channel/hls/$name.m3u8?sig=" + java.net.URLEncoder.encode(sig, "UTF-8") + "&token=" + java.net.URLEncoder.encode(value, "UTF-8") + "&allow_source=true&allow_audio_only=true"
+                    conn.disconnect()
+                } catch (_: Exception) {}
+                js("window.tvTwitchResolved && window.tvTwitchResolved($requestId," + JSONObject.quote(result) + ")")
+            }.start()
+        }
+        @JavascriptInterface fun openTwitch(channel: String) {
+            if (!channel.matches(Regex("[A-Za-z0-9_]{3,25}"))) return
+            runOnUiThread {
+                val u = android.net.Uri.parse("https://www.twitch.tv/$channel")
+                try { startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, u).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) {}
+            }
+        }
         /** Снимок для лаунчера (см. LumaFeed). */
         @JavascriptInterface fun publish(json: String) { Thread { LumaFeed.write(this@MainActivity, json) }.start() }
+        /** YouTube использует отдельный loopback-процесс только во время просмотра. */
+        @JavascriptInterface fun prepareYoutubeEmbed(id: String) {
+            if (!id.matches(Regex("[A-Za-z0-9_-]{11}"))) return
+            val generation = synchronized(youtubeProxyLock) { youtubeProxyGeneration++; youtubeProxy?.destroy(); youtubeProxy = null; youtubeProxyGeneration }
+            Thread {
+                try {
+                    if (!WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE) || !WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE_REVERSE_BYPASS)) throw IllegalStateException("proxy unsupported")
+                    val port = java.net.ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1")).use { it.localPort }
+                    val helper = java.io.File(applicationInfo.nativeLibraryDir, "liblumayoutubeproxy.so")
+                    val args = listOf(helper.absolutePath, "-i", "127.0.0.1", "-p", port.toString(), "-d1", "-d3+s", "-s6+s", "-d9+s", "-s12+s", "-d15+s", "-s20+s", "-d25+s", "-s30+s", "-d35+s", "-r1+s", "-S", "-a1", "-At,r,s,c", "-d1", "-d3+s", "-s6+s", "-d9+s", "-s12+s", "-d15+s", "-s20+s", "-d25+s", "-s30+s", "-d35+s", "-S", "-a1")
+                    val process = ProcessBuilder(args).redirectErrorStream(true).redirectOutput(java.io.File(cacheDir, "youtube-proxy.log")).start()
+                    synchronized(youtubeProxyLock) { if (generation != youtubeProxyGeneration) { process.destroy(); return@Thread }; youtubeProxy = process }
+                    var available = false
+                    for (attempt in 0 until 20) { try { java.net.Socket().use { it.connect(java.net.InetSocketAddress("127.0.0.1", port), 200) }; available = true; break } catch (_: Exception) { Thread.sleep(100) } }
+                    if (!available) throw IllegalStateException("proxy did not start")
+                    val builder = ProxyConfig.Builder().addProxyRule("socks5://127.0.0.1:$port").setReverseBypassEnabled(true)
+                    listOf("youtube.com", "*.youtube.com", "youtube-nocookie.com", "*.youtube-nocookie.com", "googlevideo.com", "*.googlevideo.com", "ytimg.com", "*.ytimg.com", "ggpht.com", "*.ggpht.com").forEach { builder.addBypassRule(it) }
+                    ProxyController.getInstance().setProxyOverride(builder.build(), androidx.core.content.ContextCompat.getMainExecutor(this@MainActivity)) {
+                        if (synchronized(youtubeProxyLock) { generation == youtubeProxyGeneration }) js("window.lumaYoutubeEmbedReady && window.lumaYoutubeEmbedReady(${JSONObject.quote(id)}, true)")
+                    }
+                } catch (_: Exception) {
+                    val current = synchronized(youtubeProxyLock) { if (generation == youtubeProxyGeneration) { youtubeProxy?.destroy(); youtubeProxy = null; true } else false }
+                    if (current) js("window.lumaYoutubeEmbedReady && window.lumaYoutubeEmbedReady(${JSONObject.quote(id)}, false)")
+                }
+            }.start()
+        }
+        /** Поиск использует собственный временный локальный обход, не меняя настройки WebView. */
+        @JavascriptInterface fun searchYoutubeLive(query: String, requestId: Int) {
+            if (query.length !in 3..160) return
+            Thread {
+                var process: Process? = null
+                var result = ""
+                try {
+                    val port = java.net.ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1")).use { it.localPort }
+                    val helper = java.io.File(applicationInfo.nativeLibraryDir, "liblumayoutubeproxy.so")
+                    val args = listOf(helper.absolutePath, "-i", "127.0.0.1", "-p", port.toString(), "-d1", "-d3+s", "-s6+s", "-d9+s", "-s12+s", "-d15+s", "-s20+s", "-d25+s", "-s30+s", "-d35+s", "-r1+s", "-S", "-a1", "-At,r,s,c", "-d1", "-d3+s", "-s6+s", "-d9+s", "-s12+s", "-d15+s", "-s20+s", "-d25+s", "-s30+s", "-d35+s", "-S", "-a1")
+                    process = ProcessBuilder(args).redirectErrorStream(true).redirectOutput(java.io.File(cacheDir, "youtube-search-proxy.log")).start()
+                    var ready = false
+                    for (attempt in 0 until 20) { try { java.net.Socket().use { it.connect(java.net.InetSocketAddress("127.0.0.1", port), 200) }; ready = true; break } catch (_: Exception) { Thread.sleep(100) } }
+                    if (!ready) throw IllegalStateException("proxy unavailable")
+                    val proxy = java.net.Proxy(java.net.Proxy.Type.SOCKS, java.net.InetSocketAddress("127.0.0.1", port))
+                    val url = java.net.URL("https://www.youtube.com/results?search_query=" + java.net.URLEncoder.encode(query, "UTF-8") + "&sp=EgJAAQ%3D%3D&hl=en")
+                    val conn = url.openConnection(proxy) as java.net.HttpURLConnection
+                    conn.connectTimeout = 12000; conn.readTimeout = 12000; conn.instanceFollowRedirects = false
+                    conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0 Safari/537.36")
+                    if (conn.responseCode == 200) result = conn.inputStream.bufferedReader().use { it.readText().take(3000001) }
+                    conn.disconnect()
+                    if (result.length > 3000000) result = ""
+                } catch (_: Exception) {} finally { process?.destroy() }
+                js("window.lumaYoutubeSearchResolved && window.lumaYoutubeSearchResolved($requestId," + JSONObject.quote(result) + ")")
+            }.start()
+        }
+        @JavascriptInterface fun clearYoutubeEmbed() = stopYoutubeProxy()
         /** Трейлер YouTube открываем в приложении YouTube на ТВ: оно работает через ByeByeDPI и играет лучше встроенного плеера. */
         @JavascriptInterface fun openYoutube(id: String) {
             if (!id.matches(Regex("[\\w-]{6,20}"))) return
@@ -361,6 +523,7 @@ class MainActivity : Activity() {
 
     override fun onPause() { super.onPause(); np.pause(); web.onPause(); js("window.lumaPause && window.lumaPause()") }
     override fun onResume() { super.onResume(); web.onResume() }
-    override fun onDestroy() { importServer?.stop(); syncNet.stopResponder(); syncSrv?.stop(); np.stop(); web.destroy(); super.onDestroy() }
+    override fun onDestroy() { stopYoutubeProxy(); importServer?.stop(); syncNet.stopResponder(); syncSrv?.stop(); np.stop(); web.destroy(); super.onDestroy() }
 }
+
 

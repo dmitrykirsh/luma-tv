@@ -57,27 +57,43 @@ function trBadges(t) {
   else if (has(/\b1080p\b/i) || has(/1920x/)) out.push('FHD');
   else if (has(/\b720p\b/i) || has(/1280x/)) out.push('HD');
   else if (has(/\b(480p|dvdr?ip)\b/i)) out.push('DVD');
-  if (has(/\bhdr10\+\b/i)) out.push('HDR10+');
+  if (has(/\bhdr10\+(?!\w)/i)) out.push('HDR10+');
   else if (has(/\b(hdr10|hdr)\b/i)) out.push('HDR');
   if (has(/\b(dv|dolby[ -]?vision)\b/i)) out.push('DV');
   if (has(/\b(hevc|x265|h265)\b/i)) out.push('HEVC');
   else if (has(/\b(x264|h264|avc)\b/i)) out.push('AVC');
   if (has(/\bremux\b/i)) out.push('Remux');
-  if (has(/\b(bdrip|bd-rip|blu[ -]?ray)\b/i)) out.push('BDRip');
+  if (has(/\b(?:bdrip|bd-rip)\b/i)) out.push('BDRip');
+  else if (has(/\bblu[ -]?ray\b/i)) out.push('Blu-ray');
   else if (has(/\bweb[ -]?(dl|rip)\b/i)) out.push('WEB-DL');
   else if (has(/\b(ts|tc)\b(?![\w])/) || has(/\bhdrip\b/i)) out.push('TS');
+  if (has(/\b(?:dolby[ ._-]?atmos|atmos)\b/i)) out.push('Atmos');
+  else if (has(/\bdts(?:[ ._-]?hd)?\b/i)) out.push('DTS');
+  else if (has(/\b(?:dolby[ ._-]?digital|eac3|ac3)\b/i)) out.push('Dolby');
   const dub = [];
-  if (has(/(дб|дубляж|dub(bed)?)\b/i)) dub.push('Дубляж');
-  if (has(/\bпм\b/i)) dub.push('ПМ');
-  if (has(/\bло\b/i)) dub.push('ЛО');
-  if (has(/\b(ап|авторский перевод)\b/i)) dub.push('АП');
-  if (has(/\b(любительский|многоголос|двухголос|vo)\b/i)) dub.push('Перевод');
-  return { tech: out.slice(0, 5), dub: dub.slice(0, 4) };
+  if (has(/(?:^|[^а-яё])(дб|дубляж)(?=$|[^а-яё])|\bdub(?:bed)?\b/i)) dub.push('Дубляж');
+  if (has(/(?:^|[^а-яё])пм(?=$|[^а-яё])/i)) dub.push('ПМ');
+  if (has(/(?:^|[^а-яё])ло(?=$|[^а-яё])/i)) dub.push('ЛО');
+  if (has(/(?:^|[^а-яё])(ап|авторский перевод)(?=$|[^а-яё])/i)) dub.push('АП');
+  if (has(/любительск|многоголос|двухголос|\bvo\b/i)) dub.push('Перевод');
+  return { tech: out.slice(0, 6), dub: dub.slice(0, 4) };
 }
-const trRus = (t) => /rus|рус|дубляж|дуб(\b|\.)\b|пм\b|ло\b|ап\b|перевод|многоголос|двухголос|любитель/i.test(t);
+// Небольшие монохромные пиктограммы, чтобы категории различались с расстояния.
+function trBadgeIcon(label) {
+  const path = /^(4K|FHD|HD|DVD|TS)$/.test(label) ? '<rect x="2" y="3" width="20" height="15" rx="3"/><path d="M8 21h8m-4-3v3"/>' : /^(HDR|HDR10|HDR10\+|DV)$/.test(label) ? '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4m0-14.2-1.4 1.4M6.3 17.7l-1.4 1.4"/>' : /^(Atmos|DTS|Dolby|Дубляж|ПМ|ЛО|АП|Перевод)$/.test(label) ? '<path d="M4 10v4h4l5 4V6L8 10H4Zm12-1a5 5 0 0 1 0 6m2-9a9 9 0 0 1 0 12"/>' : '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 9h10M7 13h10m-10 3h6"/>';
+  return '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+path+'</svg>';
+}
+const trRus = (t) => /rus|рус|дубляж|(?:^|[^\p{L}])(?:дуб|дб|пм|ло|ап)(?!\p{L})|перевод|многоголос|двухголос|любитель/iu.test(t);
 /* раздача относится к сезону N? «сезон 2», «season 2», «S02», «2 сезон» */
 function trSeasonMatch(t, n) {
-  return new RegExp(`(сезон\\s*0?${n}(?!\\d)|season\\s*0?${n}(?!\\d)|[\\s.\\[\\(,]s0?${n}[\\.e\\s\\]\\),])`, 'i').test(' ' + t + ' ');
+  const text=' ' + String(t || '') + ' ', season=Number(n);
+  if (!Number.isInteger(season) || season < 1) return false;
+  if (/(?:все\s+сезоны|all\s+seasons)/i.test(text)) return true;
+  const ranges=[...text.matchAll(/(?:сезон(?:ы|ов|а)?|seasons?)\s*[:№#]?\s*(\d{1,2})\s*[-–—]\s*(\d{1,2})/gi), ...text.matchAll(/\b(\d{1,2})\s*[-–—]\s*(\d{1,2})\s*(?:сезон(?:ы|ов|а)?|seasons?)(?![\p{L}])/giu), ...text.matchAll(/\bs(\d{1,2})\s*[-–—]\s*s?(\d{1,2})\b/gi)];
+  if(ranges.some(m=>season>=Number(m[1]) && season<=Number(m[2])))return true;
+  const lists=[...text.matchAll(/(?:сезон(?:ы|ов|а)?|seasons?)\s*[:№#]?\s*(\d{1,2}(?:\s*[,;+&]\s*\d{1,2})+)/gi)];
+  if(lists.some(m=>m[1].split(/[,;+&]/).some(x=>Number(x.trim())===season)))return true;
+  return new RegExp(`(?:сезон|season)\\s*[:№#]?\\s*0?${season}(?!\\d)|(?:^|[\\s.\\[\\(,])s0?${season}(?=[.e\\s\\]\\),_-]|$)|(?:^|\\s)0?${season}\\s*[- ]?\\s*(?:сезон|season)`, 'i').test(text);
 }
 const trGb = (n) => { n = Number(n) || 0; return n >= 1e9 ? (n / 1e9).toFixed(1).replace(/\.0$/, '') + ' ГБ' : Math.round(n / 1e6) + ' МБ'; };
 const trDate = (s) => { const d = new Date(s || 0); return isNaN(d) ? '' : d.toLocaleDateString('ru', { day: 'numeric', month: 'short', year: 'numeric' }); };
@@ -100,14 +116,13 @@ window.RENDER.torrents = renderTorrents;
 function trPaint(st) {
   const d = TRS.d, inf = TRS.inf;
   const head = `<div class="trh"><div class="trp"><img src="${esc(posterOf(d))}" alt="" onerror="this.remove()"></div>
-    <div class="trt"><div class="ty">${esc(TYPES[d.type] || '')}</div><h1>${esc(d.name)}</h1>
-    <div class="meta"><span>${d.year || ''}</span>${d.kp_rating ? `<span class="c">★ ${Number(d.kp_rating).toFixed(1)}</span>` : ''}</div>
-    ${inf.description ? `<div class="trdesc">${esc(inf.description)}</div>` : ''}</div></div>`;
+    <div class="trt"><div class="person-kicker">ИСТОЧНИКИ · ТОРРЕНТЫ</div><h1>${esc(d.name)}</h1>${d.origin_name||inf.name_eng?`<p class="tr-original">${esc(d.origin_name||inf.name_eng)}</p>`:''}
+    <div class="meta"><span>${d.year || ''}</span>${d.kp_rating ? `<span>· ★ ${Number(d.kp_rating).toFixed(1)}</span>` : ''}</div></div></div>`;
 
   // заглушка: сервер не готов
   if (!st.installed || !st.running) {
     const needInstall = !st.installed;
-    view.innerHTML = `<div class="page">${head}<div class="trempty f" tabindex="-1" data-k="tr:empty">
+    view.innerHTML = `<div class="page torrent-tv-page">${head}<div class="trempty f" tabindex="-1" data-k="tr:empty">
       <div class="tre-ic">${ico('magnet')}</div>
       <h2>${needInstall ? 'Торренты ещё не подключены' : 'Сервер торрентов выключен'}</h2>
       <p>${needInstall
@@ -121,7 +136,8 @@ function trPaint(st) {
   }
 
   // рабочий экран: сезоны (как в NUM) + поиск + результаты
-  view.innerHTML = `<div class="page">${head}
+  view.innerHTML = `<div class="page torrent-tv-page">${head}
+    <div class="tv-torrent-heading"><div><span class="person-kicker">ПОИСК</span><h2>Раздачи</h2></div><span>TorrServe подключён</span></div>
     ${TRS.seasons.length > 1 ? `<div class="trseas">${`<button class="chip f ${!TRS.season ? 'on' : ''}" tabindex="-1" data-tr="seas" data-v="" data-k="tr:seas:all"><small>Сезон</small>Все</button>` + TRS.seasons.map((s) => `<button class="chip f ${String(TRS.season) === String(s.season) ? 'on' : ''}" tabindex="-1" data-tr="seas" data-v="${esc(String(s.season))}" data-k="tr:seas:${esc(String(s.season))}"><small>Сезон</small>${esc(String(s.season))}</button>`).join('')}</div>` : ''}
     <div class="trbar">
       <button class="chip fl f" tabindex="-1" data-tr="find" data-k="tr:find"><small>Поиск</small>${esc(d.name)} ${d.year || ''}<i>⌕</i></button>
@@ -144,18 +160,18 @@ async function trLoad() {
 function trPaintList() {
   const box = $('#trList'); if (!box || !TRS.list) return;
   let list = TRS.list.slice();
-  if (TRS.rusOnly) { const f = list.filter((x) => trRus(x.Title)); if (f.length) list = f; }
-  if (TRS.season) { const f = list.filter((x) => trSeasonMatch(x.Title, TRS.season)); if (f.length) list = f; }
+  if (TRS.rusOnly) list = list.filter((x) => trRus(x.Title));
+  if (TRS.season) list = list.filter((x) => trSeasonMatch(x.Title, TRS.season));
   const cmp = { seed: (a, b) => (b.Seeders || 0) - (a.Seeders || 0), size: (a, b) => (b.Size || 0) - (a.Size || 0), date: (a, b) => new Date(b.PublishDate || 0) - new Date(a.PublishDate || 0) };
   list.sort(cmp[TRS.sort] || cmp.seed);
   const srt = { seed: 'По сидам', size: 'По размеру', date: 'По дате' }[TRS.sort];
   const sEl = $('#trSort'); if (sEl) sEl.textContent = srt;
-  if (!list.length) { box.innerHTML = '<div class="empty"><b>Раздач не нашлось</b>Попробуйте поиск по оригинальному названию или свою ссылку</div>'; return; }
+  if (!list.length) { box.innerHTML = TRS.season || TRS.rusOnly ? '<div class="empty"><b>По выбранным фильтрам раздач нет</b>Выберите другой сезон или звук</div>' : '<div class="empty"><b>Раздач не нашлось</b>Попробуйте поиск по оригинальному названию или свою ссылку</div>'; return; }
   box.innerHTML = `<div class="trcount">Раздач: ${list.length}</div>` + list.map((x, i) => {
     const b = trBadges(x.Title), seed = x.Seeders || 0, peers = x.Peers || 0;
     return `<button class="trrow f" tabindex="-1" data-trr="${i}" data-k="trr:${i}">
       <span class="trr-main"><b>${esc(x.Title)}</b>
-        <span class="trr-badges">${b.tech.map((t2) => `<i class="trb">${esc(t2)}</i>`).join('')}${b.dub.map((t2) => `<i class="trb dub">${esc(t2)}</i>`).join('')}</span></span>
+        <span class="trr-badges">${b.tech.map((t2) => `<i class="trb">${trBadgeIcon(t2)}<span>${esc(t2)}</span></i>`).join('')}${b.dub.map((t2) => `<i class="trb dub">${trBadgeIcon(t2)}<span>${esc(t2)}</span></i>`).join('')}</span></span>
       <span class="trr-side"><i class="trseed ${trSeedCls(seed)}">▲ ${seed}</i><i class="trpeer">▼ ${peers}</i><i class="trsz">${trGb(x.Size)}</i><small>${esc(String(x.Tracker || '').split(',')[0].trim())}${x.PublishDate ? ' · ' + trDate(x.PublishDate) : ''}</small></span></button>`;
   }).join('');
 }
@@ -256,7 +272,13 @@ function trPickFile(info) {
   window.__trPick = { info };
   $('.nm-r', modal)?.focus({ preventScroll: true });
 }
+function trProgressKey(info,f) {
+  let hash=String(info.hash||'');
+  if(!/^(?:[a-z2-7]{32}|[a-f0-9]{40})$/i.test(hash)){try{hash=new URL(info.magnet).searchParams.getAll('xt').map(x=>/^urn:btih:([a-z2-7]{32}|[a-f0-9]{40})$/i.exec(x)?.[1]).find(Boolean)||'';}catch{hash='';}}
+  return hash?'torrent@'+hash.toLowerCase()+'@'+String(f.id):'';
+}
 function trPlayFile(info, f) {
+  npRememberPosition();
   closeDlg();
   if (!TRS.d) TRS.d = { id: -1, type: 1, name: info.name };
   const fname = (f.path || info.name).split('/').pop();
@@ -275,17 +297,18 @@ function trPlayFile(info, f) {
     trPlayFile(c.info, q); return true;
   };
   const n = trEpNum(f.path);
-  // тот же нативный плеер, что для фильмов сайта; прогресс в историю Luma не пишем:
-  // позиция торрента не совпадает с эпизодами сайта, а портить «Продолжить» нельзя
-  const token = ++NP.token;
-  Object.assign(NP, { on: true, d: TRS.d, seasons: [], season: null, episode: null, key: '', tr: null, torr: window.npTorrCtx, secs: [], mode: 'play', menu: '', st: { p: 0, d: 0, pl: false, b: true, w: true }, lastSave: 0, subApplied: '1', audioNames: [] });
+  // Прогресс привязан к раздаче и файлу, а не к номеру серии другого источника.
+  const key=trProgressKey(info,f),resume=key?resumeInfo(key):null;
+  const token = ++NP.token; NP.kodik=null; NP.rutube=false; NP.seek.held=false; NP.seek.since=0;
+  Object.assign(NP, { on: true, d: TRS.d, seasons: [], season: null, episode: null, key, tr: null, torr: window.npTorrCtx, secs: [], prev:null, scrub:null, qualityApplied:false, aoAudioIndex:null, mode: 'play', menu: '', st: { p: 0, d: 0, pl: false, b: true, w: true }, lastSave: 0, subApplied: '1', audioNames: [] });
   npEnsureDom(); npShow();
   $('#np .np-load').classList.remove('hidden'); $('#np .np-load span').textContent = 'Открываем торрент…';
   $('#np .np-title b').textContent = TRS.d.name;
   $('#np .np-title span').textContent = 'Торрент · ' + (n && n.e ? 'Серия ' + n.e : fname);
   closeNpMenu(true); renderNpButtons(); npOsd(5000);
-  addHistory(TRS.d, null, null);
-  try { NATIVE.npStart(JSON.stringify({ url, ua: NP_UA, startMs: 0, vlc })); } catch (e) { npClose(true); toast('Плеер не запустился'); }
+  if (!S.history.some(h=>String(h.id)===String(TRS.d.id))) addHistory(TRS.d, null, null);
+  if(resume)toast('Продолжаем с '+fmtTime(resume.t));
+  try { NATIVE.npStart(JSON.stringify({subtitleShiftMs:npSubShift*1000, url, ua: NP_UA, startMs: resume ? Math.floor(resume.t*1000) : 0, vlc })); } catch (e) { npClose(true); toast('Плеер не запустился'); }
 }
 
 /* ---------- клики экрана ---------- */
@@ -318,9 +341,9 @@ window.lumaTorrState = (s) => {   // состояния установки из 
   if (s.state === 'installing' || s.state === 'needperm') setTimeout(async () => { await trState(true); if (route.name === 'settings' && stCur === 'torrents') paintPane(); }, 1200);
 };
 function trSetupRow(txt) { const b = $('#trSetupMsg'); if (b) b.textContent = txt; }
-async function trSettingsPane(p) {
+async function trSettingsPane(p, focusPane = false) {
   const st = await trState(true);
-  if (!p.isConnected) return;
+  if (!p.isConnected || route.name !== 'settings' || stCur !== 'torrents') return;
   const ready = st.installed && st.running;
   const cardHtml = (ic, title, text) => `<div class="sc hero"><div class="sci">${ico(ic)}</div><div><b>${title}</b><p>${text}</p></div></div>`;
   p.innerHTML = cardHtml('magnet', 'Торренты', 'Фильмы и сериалы из торрент-раздач: ищем раздачи, а качает и играет локальный сервер TorrServe. Он бесплатный и ставится один раз.') +
@@ -332,6 +355,7 @@ async function trSettingsPane(p) {
          <button class="srow f" tabindex="-1" data-sact="trinstall" data-k="tr:install"><span class="sri">${ico('refresh')}</span><span><b>${st.installed ? 'Запустить TorrServe' : 'Скачать и установить TorrServe'}</b><small id="trSetupMsg">${st.installed ? 'Сервер не отвечает: приложение установлено, но не запущено' : 'Сервер потребуется для поиска раздач в карточках фильмов'}</small></span><i>›</i></button>
          <button class="srow f" tabindex="-1" data-sact="trcheck" data-k="tr:check"><span class="sri">${ico('info')}</span><span><b>Проверить состояние</b><small>Обновить статус сервера</small></span><i>›</i></button></div>
          <div class="smeta">После установки откроется TorrServe: разрешите ему работу в фоне. Возвращайтесь в Luma — кнопка «Торренты» появится в карточках фильмов.</div>`);
+  if (focusPane && (document.activeElement === document.body || document.activeElement?.dataset.st === 'torrents')) p.querySelector('button.f')?.focus({preventScroll:true});
 }
 document.addEventListener('click', async (e) => {
   const el = e.target.closest('.f'); if (!el || route.name !== 'settings' || stCur !== 'torrents') return;

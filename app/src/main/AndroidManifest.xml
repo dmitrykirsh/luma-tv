@@ -27,7 +27,7 @@
         </provider>
         <provider
             android:name=".FeedProvider"
-            android:authorities="ws.luma.tv.feed"
+            android:authorities="${applicationId}.feed"
             android:exported="true" />
         <activity
             android:name=".MainActivity"

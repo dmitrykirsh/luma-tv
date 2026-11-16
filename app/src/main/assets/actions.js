@@ -29,7 +29,7 @@ async function cardMenu(el) {
       ${recent ? '<button class="btn f" tabindex="-1" data-cm="chrecent" data-k="cm:rec">Убрать из недавних</button>' : ''}</div>`);
     window.__cm = { id: c.id, key }; return;
   }
-  const id = +el.dataset.id;
+  const id = /^ao:/.test(el.dataset.id) ? el.dataset.id : +el.dataset.id;
   const name = $('.t', el)?.textContent || '';
   const fav = isFav(id), hist = S.history.some((h) => h.id === id);
   const inCont = !!el.closest('#rCont');   // строка «Продолжить просмотр»: удаление из неё первым пунктом
@@ -86,7 +86,7 @@ function renderPlImport() {
   plWaiting = !!url; impWaiting = !!url;
   let qr = '';
   if (url) { const q = qrcode(0, 'M'); q.addData(url); q.make(); qr = q.createSvgTag({ cellSize: 6, margin: 0, scalable: true }); }
-  view.innerHTML = `<div class="page"><div class="imp"><ol>
+  view.innerHTML = `<div class="page tv-import-page">${tvCatalogHeader('Добавить плейлист','Подключите список каналов с телефона.','ТЕЛЕВИДЕНИЕ')}<div class="imp"><ol>
     <li>Скопируйте на телефоне ссылку на плейлист каналов (M3U или M3U8).</li>
     <li>Наведите камеру телефона на QR-код справа и откройте страницу (телефон и ТВ в одной Wi-Fi сети).</li>
     <li>Вставьте ссылку и нажмите «Добавить на ТВ»: каналы появятся в разделе «Каналы».</li></ol>

@@ -1,0 +1,4 @@
+ByeDPI source: https://github.com/hufrea/byedpi
+Revision: e2684772fbda45f2ff4fc220922a010370534216
+License: MIT (see LICENSE)
+The bundled executable is built from these unmodified sources using the Android NDK.

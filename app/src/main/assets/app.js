@@ -82,6 +82,20 @@ const save = () => { clearTimeout(saveT); saveT = setTimeout(() => { try { local
 const mergeFavorites = list => {const m=new Map();for(const x of list)if(x&&x.id!=null){const id=String(x.id),old=m.get(id);if(!old||Number(x.at||0)>Number(old.at||0))m.set(id,x);}return [...m.values()];};
 const mergeSavedLists = list => {const m=new Map();for(const x of list)if(x&&x.url){const old=m.get(x.url);if(!old||Number(x.at||0)>Number(old.at||0))m.set(x.url,x);}return [...m.values()];};
 
+function mergeTvFavorites(localList, localMeta, incomingList, incomingMeta) {
+  const meta = Object.create(null);
+  for (const source of [localMeta, incomingMeta]) if (source && typeof source === 'object' && !Array.isArray(source)) {
+    for (const [id, item] of Object.entries(source)) {
+      if (!id || ['__proto__','prototype','constructor'].includes(id) || !item || typeof item.on !== 'boolean' || !Number.isSafeInteger(item.ts) || item.ts <= 0) continue;
+      const prev = meta[id];
+      if (!prev || item.ts > prev.ts || (item.ts === prev.ts && !item.on && prev.on)) meta[id] = {on:item.on, ts:item.ts};
+    }
+  }
+  const list = [...new Set([...(Array.isArray(localList)?localList:[]), ...(Array.isArray(incomingList)?incomingList:[])].filter(id=>typeof id==='string'||typeof id==='number').map(String).filter(Boolean))];
+  for (const [id, item] of Object.entries(meta)) if (item.on && !list.includes(id)) list.push(id);
+  return { list:list.filter(id=>!meta[id] || meta[id].on), meta };
+}
+
 function mergeBackup(b) {
   const d = b.data || {};
   S.favs = mergeFavorites([...(S.favs || []), ...(d.favs || [])]);
@@ -92,7 +106,7 @@ function mergeBackup(b) {
   for (const [gk, gts] of Object.entries(d.gone || {})) if (gts > (S.gone[gk] || 0)) S.gone[gk] = gts;   // отметки об удалении: удалённое на одном устройстве не возвращается с другого
   { const cut = Date.now() - 90 * 864e5; for (const gk of Object.keys(S.gone)) if (S.gone[gk] < cut) delete S.gone[gk]; }
   S.favs = S.favs.filter((f) => !(S.gone['f:' + f.id] > (f.at || 0)));
-  const seenAfter = (id, ts) => [S.progress || {}, d.progress || {}].some((pr) => Object.entries(pr).some(([k, p]) => k.startsWith(id + ':') && (p.ts || 0) > ts));   // был просмотр позже удаления: запись остаётся
+  const seenAfter = (id, ts) => [S.progress || {}, d.progress || {}].some((pr) => Object.entries(pr).some(([k, p]) => {const base=String(k).replace(/^(?:vk|rutube)~[^~]+~/,'');return (base===String(id)||base.startsWith(String(id)+':'))&&(p.ts||0)>ts;}));   // был просмотр позже удаления: запись остаётся
   S.history = S.history.filter((h) => !(S.gone['h:' + h.id] > (h.ts || 0) && !seenAfter(h.id, S.gone['h:' + h.id])));
   S.seen = { ...(S.seen || {}) };
   for (const [k, arr] of Object.entries(d.seen || {})) S.seen[k] = [...new Set([...(S.seen[k] || []), ...arr])];
@@ -116,7 +130,7 @@ function mergeBackup(b) {
   if (Array.isArray(d.trackedPremieres)) x.trackedPremieres = d.trackedPremieres;
   if (d.lists) x.lists = mergeSavedLists([...(x.lists || []), ...d.lists]);
   if (x.lists) x.lists = x.lists.filter(l=>!(S.gone['l:'+l.url]>Number(l.at||0)));
-  if (d.tvFav) x.tvFav = [...new Set([...(x.tvFav || []), ...d.tvFav])];
+  { const merged = mergeTvFavorites(x.tvFav, x.tvFavMeta, d.tvFav, d.tvFavMeta); x.tvFav = merged.list; x.tvFavMeta = merged.meta; }
   if (d.tvStats) { x.tvStats = x.tvStats || {}; for (const [id, st] of Object.entries(d.tvStats)) { const o = x.tvStats[id]; if (!o || (st.last || 0) > (o.last || 0)) x.tvStats[id] = { ...st, n: Math.max(st.n || 0, o?.n || 0), t: Math.max(st.t || 0, o?.t || 0) }; } }
   if (d.tvEpgLinks && typeof d.tvEpgLinks === 'object' && !Array.isArray(d.tvEpgLinks)) { x.tvEpgLinks = x.tvEpgLinks || {}; for (const [id, link] of Object.entries(d.tvEpgLinks)) if (link && typeof link === 'object' && Number(link.ts || 0) > Number(x.tvEpgLinks[id]?.ts || 0)) x.tvEpgLinks[id] = link; }
   if (d.tvCustom) { const cur = x.tvCustom || []; x.tvCustom = [...cur, ...d.tvCustom.filter((e) => e && e.url && !cur.some((c) => c.url === e.url))]; }
@@ -796,7 +810,7 @@ const nrm = (x) => String(x || '').toLowerCase().replace(/ё/g, 'е').replace(/[
 const nameOk = (a, b) => { a = nrm(a); b = nrm(b); return !!a && !!b && (a === b || (a.length >= 5 && b.length >= 5 && (a.includes(b) || b.includes(a)))); };
 // Avoid assigning artwork or trailers to a similarly named remake.
 function tmdbSelectMatch(results, {names, year, kind, anime}) {
-  const norm=x=>String(x||'').toLowerCase().replace(/ё/g,'е').normalize('NFKC').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+  const norm=x=>String(x||'').toLowerCase().replace(/ё/g,'е').normalize('NFKC').replace(/(\p{L})(\d)/gu,'$1 $2').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
   const inputs=[...new Set((names||[]).map(norm).filter(Boolean))];
   if(!inputs.length)return null;
   const requestedYear=Number(year)||0,scored=[];
@@ -826,7 +840,7 @@ function tmFind(d) {
 async function tmFindRaw(d) {
   const kind = TV_TYPES.includes(Number(d.type)) ? 'tv' : 'movie';
   let found = null;const anime=[6,7].includes(Number(d.type));
-  const clean=x=>anime?String(x||'').replace(/\s*\[(?:ТВ|TV)[-\s]*\d+[^\]]*\]/gi,'').replace(/\s+(?:season|сезон)\s*\d+(?:\s*(?:part|часть)\s*\d+)?\s*$/i,'').trim():String(x||'').trim();
+  const clean=x=>anime?String(x||'').replace(/\s*\[(?:ТВ|TV)[-\s]*\d+[^\]]*\]/gi,'').replace(/(\((?:19|20)\d{2}\))\s+\d+\s*$/,'$1').replace(/\s+(?:(?:season|сезон)\s*\d+(?:\s*(?:part|часть)\s*\d+)?|\d+(?:st|nd|rd|th)\s+season)\s*$/i,'').replace(/\s*\((?:19|20)\d{2}\)\s*$/g,'').trim():String(x||'').trim();
   const aliases=[...(d._ao?.aliases||[]),...(d._ao?.franchise?.nodes||[]).filter(x=>String(x.id)===String(d._ao.franchise.currentId)).map(x=>x.name)];
   const names=[d.origin_name,d.name,...aliases].map(clean).filter(Boolean);
   for (const q of [...new Set(names)]) {

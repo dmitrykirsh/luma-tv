@@ -19,8 +19,8 @@ android {
         applicationId = "ws.luma.tv"
         minSdk = 24
         targetSdk = 34
-        versionCode = 134
-        versionName = "1.2.1"
+        versionCode = 135
+        versionName = "1.2.2"
         buildConfigField("String", "DRIVE_CLIENT_ID", "\"${syncProps.getProperty("driveClientId", "")}\"")
         buildConfigField("String", "DRIVE_CLIENT_SECRET", "\"${syncProps.getProperty("driveClientSecret", "")}\"")
         buildConfigField("String", "DRIVE_DESK_ID", "\"${syncProps.getProperty("driveDesktopClientId", "")}\"")
@@ -36,7 +36,9 @@ android {
     }
     buildTypes {
         getByName("debug") {
-            if (providers.gradleProperty("codexTest").orNull == "true") {
+            if (providers.gradleProperty("codexMobileSyncTest").orNull == "true") {
+                applicationIdSuffix = ".codexmobilesync"
+            } else if (providers.gradleProperty("codexTest").orNull == "true") {
                 applicationIdSuffix = ".codextest"
             }
         }

@@ -24,7 +24,7 @@ TVD.scope = 'rutube'; TVD.rutubeAt = 0; TVD.rutubeLoading = null;
 const tvX = () => (S.extra = S.extra || {});
 const tvFavs = () => (tvX().tvFav = tvX().tvFav || []);
 const tvIsFav = (id) => tvFavs().includes(id);
-function tvToggleFav(id) { const f = tvFavs(); const i = f.indexOf(id); if (i >= 0) f.splice(i, 1); else f.unshift(id); save(); return i < 0; }
+function tvToggleFav(id) { const f = tvFavs(), i = f.indexOf(id), meta = (tvX().tvFavMeta ||= Object.create(null)), old = meta[id]; if (i >= 0) f.splice(i, 1); else f.unshift(id); meta[id] = {on:i < 0, ts:Math.max(Date.now(), Number(old?.ts || 0) + 1)}; save(); return i < 0; }
 const tvStats = () => (tvX().tvStats = tvX().tvStats || {});
 
 /* ---------- плейлисты ---------- */

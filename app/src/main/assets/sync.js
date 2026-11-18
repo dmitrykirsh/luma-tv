@@ -15,7 +15,7 @@ function exportJson() {
   const x = tvX();
   return JSON.stringify({
     app: 'Luma', format: 1, exportedAt: new Date().toISOString(), version: NATIVE ? NATIVE.version() : '',
-    data: { ...(x.done ? {done:x.done} : {}), ...(x.sourceHistory ? {sourceHistory:x.sourceHistory} : {}), ...(x.watchPrefs ? {watchPrefs:x.watchPrefs} : {}), ...(x.sportFollows ? {sportFollows:x.sportFollows} : {}), ...(x.sportReminders ? {sportReminders:x.sportReminders} : {}), ...(x.playerVoicePrefs ? {playerVoicePrefs:x.playerVoicePrefs} : {}), ...(x.trackedPremieres ? {trackedPremieres:x.trackedPremieres} : {}), favs: S.favs, history: S.history, seen: S.seen, gone: S.gone || {}, progress: S.progress, lists: x.lists || [], tvFav: x.tvFav || [], tvStats: x.tvStats || {}, tvEpgLinks: x.tvEpgLinks || {}, tvCustom: (x.tvCustom || []).filter((e) => e.url), tvLast: x.tvLast || '' },
+    data: { ...(x.done ? {done:x.done} : {}), ...(x.sourceHistory ? {sourceHistory:x.sourceHistory} : {}), ...(x.watchPrefs ? {watchPrefs:x.watchPrefs} : {}), ...(x.sportFollows ? {sportFollows:x.sportFollows} : {}), ...(x.sportReminders ? {sportReminders:x.sportReminders} : {}), ...(x.playerVoicePrefs ? {playerVoicePrefs:x.playerVoicePrefs} : {}), ...(x.trackedPremieres ? {trackedPremieres:x.trackedPremieres} : {}), favs: S.favs, history: S.history, seen: S.seen, gone: S.gone || {}, progress: S.progress, lists: x.lists || [], tvFav: x.tvFav || [], tvFavMeta: x.tvFavMeta || {}, tvStats: x.tvStats || {}, tvEpgLinks: x.tvEpgLinks || {}, tvCustom: (x.tvCustom || []).filter((e) => e.url), tvLast: x.tvLast || '' },
     secrets: syncSecrets(), sync: S.group ? { gid: S.group.id, gkey: S.group.key } : undefined
   });
 }
@@ -42,6 +42,8 @@ const syState = () => {
     ordered(tvX().watchPrefs), ordered(tvX().sportFollows), ordered(tvX().sportReminders), ordered(tvX().sourceHistory), ordered(tvX().done),
     animeonVersion,
     ordered(tvX().tvEpgLinks || {}).map(([id,link])=>[id,link?.id||'',Number(link?.ts||0)]),
+    (tvX().tvFav || []).slice().sort(), ordered(tvX().tvFavMeta), ordered(tvX().tvStats),
+    (tvX().tvCustom || []).slice().sort((a,b)=>String(a.id||a.url||'').localeCompare(String(b.id||b.url||''))), tvX().tvLast || '',
     (tvX().lists||[]).map(l=>[l.url,Number(l.at||0),l.title,l.author,l.count,l.desc,l.names]).sort((a,b)=>String(a[0]).localeCompare(String(b[0]))),
     ordered(S.gone||{})
   ]);
@@ -67,7 +69,7 @@ function refreshUi() {
   try {
     if (playerOpen() || (window.npActive && window.npActive())) return;
     if (route?.name === 'tvguide') { tvGuideUpdate(); return; }
-    if (route && ['home','mine','lists','list','animeCollection'].includes(route.name)) show(route, { scroll: view.scrollTop, focus: document.activeElement?.dataset?.k });
+    if (route && ['home','mine','lists','list','animeCollection','tv','tvworld'].includes(route.name)) show(route, { scroll: view.scrollTop, focus: document.activeElement?.dataset?.k });
   } catch {}
 }
 
